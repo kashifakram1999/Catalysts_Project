@@ -1,8 +1,60 @@
 from django.contrib import admin
+from django.contrib.admin import AdminSite
+from django.urls import path
+from django.utils.html import format_html
 from .models import Manufacturer, CatalyticConverter, BlogPost
+from . import admin_views
 
 
-@admin.register(Manufacturer)
+# Custom admin site configuration to add scraper dashboard
+class CARBAdminSite(AdminSite):
+    """Custom admin site with scraper dashboard"""
+    site_header = "CARB Catalytic Converter Admin"
+    site_title = "CARB Admin Portal"
+    index_title = "Welcome to CARB Catalytic Converter Database"
+
+    # Override the index template
+    def index(self, request, extra_context=None):
+        """
+        Display the main admin index page, with custom scraper dashboard link.
+        """
+        extra_context = extra_context or {}
+        extra_context['show_scraper_dashboard'] = True
+        return super().index(request, extra_context)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('scraper-dashboard/',
+                 self.admin_view(admin_views.scraper_dashboard),
+                 name='scraper_dashboard'),
+            path('scraper-dashboard/run-pdf/',
+                 self.admin_view(admin_views.run_pdf_scraper),
+                 name='run_pdf_scraper'),
+            path('scraper-dashboard/run-website/',
+                 self.admin_view(admin_views.run_website_scraper),
+                 name='run_website_scraper'),
+            path('scraper-dashboard/run-combined/',
+                 self.admin_view(admin_views.run_combined_scraper),
+                 name='run_combined_scraper'),
+            path('scraper-dashboard/stats/',
+                 self.admin_view(admin_views.scraper_stats_api),
+                 name='scraper_stats_api'),
+            path('scraper-dashboard/progress/',
+                 self.admin_view(admin_views.scraper_progress_page),
+                 name='scraper_progress'),
+            path('scraper-dashboard/progress/api/',
+                 self.admin_view(admin_views.scraper_progress_api),
+                 name='scraper_progress_api'),
+        ]
+        return custom_urls + urls
+
+
+# Create instance of custom admin site
+admin_site = CARBAdminSite(name='admin')
+
+
+@admin.register(Manufacturer, site=admin_site)
 class ManufacturerAdmin(admin.ModelAdmin):
     list_display = ['name', 'contact_info', 'created_at', 'updated_at']
     search_fields = ['name', 'contact_info']
@@ -10,7 +62,7 @@ class ManufacturerAdmin(admin.ModelAdmin):
     ordering = ['name']
 
 
-@admin.register(CatalyticConverter)
+@admin.register(CatalyticConverter, site=admin_site)
 class CatalyticConverterAdmin(admin.ModelAdmin):
     list_display = [
         'executive_order',
@@ -86,7 +138,7 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
     mark_inactive.short_description = "Mark selected converters as inactive"
 
 
-@admin.register(BlogPost)
+@admin.register(BlogPost, site=admin_site)
 class BlogPostAdmin(admin.ModelAdmin):
     list_display = ['title', 'is_published', 'published_at', 'updated_at']
     list_filter = ['is_published', 'published_at']

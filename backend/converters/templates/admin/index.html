@@ -1,0 +1,73 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .scraper-dashboard-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .scraper-dashboard-card h2 {
+        margin-top: 0;
+        font-size: 24px;
+        margin-bottom: 10px;
+    }
+
+    .scraper-dashboard-card p {
+        margin-bottom: 20px;
+        opacity: 0.9;
+        line-height: 1.5;
+    }
+
+    .scraper-dashboard-card a {
+        display: inline-block;
+        background: white;
+        color: #667eea;
+        padding: 12px 24px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+
+    .scraper-dashboard-card a:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    {% if show_scraper_dashboard %}
+    <div class="scraper-dashboard-card">
+        <h2>🔧 Data Scraping Dashboard</h2>
+        <p>
+            Manage and run data scraping operations to update the catalytic converter database.
+            Scrape from PDF files or the CARB website directly from the admin panel.
+        </p>
+        <a href="{% url 'admin:scraper_dashboard' %}">
+            Open Scraping Dashboard →
+        </a>
+    </div>
+    {% endif %}
+
+    {# Hide the app list table - models are accessible via sidebar #}
+</div>
+{% endblock %}
+
+{% block sidebar %}
+{# Hide the Recent actions sidebar #}
+{% endblock %}
