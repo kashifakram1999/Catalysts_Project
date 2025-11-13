@@ -1,0 +1,327 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}{{ scraper_type|title }} Scraper Progress{% endblock %}
+
+{% block extrastyle %}
+<style>
+    .progress-container {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .progress-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+
+    .progress-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 28px;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
+        text-transform: uppercase;
+    }
+
+    .status-running {
+        background: #ffc107;
+        color: #333;
+        animation: pulse 2s infinite;
+    }
+
+    .status-completed {
+        background: #28a745;
+        color: white;
+    }
+
+    .status-error {
+        background: #dc3545;
+        color: white;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+
+    .output-container {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 20px;
+        border-radius: 8px;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        max-height: 600px;
+        overflow-y: auto;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .output-line {
+        padding: 4px 0;
+        border-bottom: 1px solid #2d2d2d;
+    }
+
+    .output-line:last-child {
+        border-bottom: none;
+    }
+
+    .output-line:hover {
+        background: #2d2d2d;
+    }
+
+    .output-empty {
+        color: #888;
+        font-style: italic;
+        text-align: center;
+        padding: 40px;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 3px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 1s ease-in-out infinite;
+        margin-right: 10px;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .actions {
+        margin-top: 30px;
+        text-align: center;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s;
+        margin: 0 10px;
+    }
+
+    .btn-primary {
+        background: #417690;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #2e5266;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .stat-card {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 15px;
+        text-align: center;
+    }
+
+    .stat-card h3 {
+        margin: 0 0 5px 0;
+        color: #417690;
+        font-size: 24px;
+    }
+
+    .stat-card p {
+        margin: 0;
+        color: #666;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:scraper_dashboard' %}">Data Scraping Dashboard</a>
+    &rsaquo; {{ scraper_type|title }} Scraper Progress
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="progress-container">
+    <div class="progress-header">
+        <h1>
+            <span class="loading-spinner" id="spinner"></span>
+            {{ scraper_type|title }} Scraper
+        </h1>
+        <span class="status-badge" id="status-badge">Initializing...</span>
+    </div>
+
+    <div class="stats" id="stats" style="display: none;">
+        <div class="stat-card">
+            <h3 id="total-eos">-</h3>
+            <p>Total EOs</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="successful-eos">-</h3>
+            <p>Successful</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="converters">-</h3>
+            <p>Converters Found</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="created">-</h3>
+            <p>Created</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="updated">-</h3>
+            <p>Updated</p>
+        </div>
+    </div>
+
+    <div class="output-container" id="output">
+        <div class="output-empty">Waiting for scraper to start...</div>
+    </div>
+
+    <div class="actions" id="actions" style="display: none;">
+        <a href="{% url 'admin:scraper_dashboard' %}" class="btn btn-primary">Back to Dashboard</a>
+    </div>
+</div>
+
+<script>
+const taskId = "{{ task_id }}";
+const progressApiUrl = "{% url 'admin:scraper_progress_api' %}";
+let pollInterval;
+let lastOutputLength = 0;
+
+function updateProgress() {
+    fetch(`${progressApiUrl}?task_id=${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            const statusBadge = document.getElementById('status-badge');
+            const spinner = document.getElementById('spinner');
+            const outputContainer = document.getElementById('output');
+            const actionsDiv = document.getElementById('actions');
+
+            // Update status badge
+            statusBadge.className = 'status-badge status-' + data.status;
+            if (data.status === 'running') {
+                statusBadge.textContent = 'Running...';
+                spinner.style.display = 'inline-block';
+            } else if (data.status === 'completed') {
+                statusBadge.textContent = 'Completed';
+                spinner.style.display = 'none';
+                clearInterval(pollInterval);
+                actionsDiv.style.display = 'block';
+            } else if (data.status === 'error') {
+                statusBadge.textContent = 'Error';
+                spinner.style.display = 'none';
+                clearInterval(pollInterval);
+                actionsDiv.style.display = 'block';
+            }
+
+            // Update output
+            if (data.output && data.output.length > 0) {
+                // Only update if there's new output
+                if (data.output.length > lastOutputLength) {
+                    lastOutputLength = data.output.length;
+
+                    outputContainer.innerHTML = data.output
+                        .map(line => `<div class="output-line">${escapeHtml(line)}</div>`)
+                        .join('');
+
+                    // Auto-scroll to bottom
+                    outputContainer.scrollTop = outputContainer.scrollHeight;
+
+                    // Extract and display stats
+                    updateStats(data.output);
+                }
+            } else if (data.status === 'running') {
+                outputContainer.innerHTML = '<div class="output-empty">Scraper is running... Waiting for output...</div>';
+            }
+
+            // Show error if present
+            if (data.error) {
+                outputContainer.innerHTML += `<div class="output-line" style="color: #ff6b6b; font-weight: bold;">ERROR: ${escapeHtml(data.error)}</div>`;
+                clearInterval(pollInterval);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching progress:', error);
+        });
+}
+
+function updateStats(outputLines) {
+    const stats = {
+        totalEos: null,
+        successfulEos: null,
+        converters: null,
+        created: null,
+        updated: null
+    };
+
+    outputLines.forEach(line => {
+        if (line.includes('Total EOs processed:')) {
+            stats.totalEos = line.match(/\d+/)?.[0];
+        } else if (line.includes('Successful:')) {
+            stats.successfulEos = line.match(/\d+/)?.[0];
+        } else if (line.includes('Total converters found:')) {
+            stats.converters = line.match(/\d+/)?.[0];
+        } else if (line.includes('Created:')) {
+            stats.created = line.match(/\d+/)?.[0];
+        } else if (line.includes('Updated:')) {
+            stats.updated = line.match(/\d+/)?.[0];
+        }
+    });
+
+    // Update stats display if we have any values
+    if (Object.values(stats).some(v => v !== null)) {
+        document.getElementById('stats').style.display = 'grid';
+        if (stats.totalEos) document.getElementById('total-eos').textContent = stats.totalEos;
+        if (stats.successfulEos) document.getElementById('successful-eos').textContent = stats.successfulEos;
+        if (stats.converters) document.getElementById('converters').textContent = stats.converters;
+        if (stats.created) document.getElementById('created').textContent = stats.created;
+        if (stats.updated) document.getElementById('updated').textContent = stats.updated;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Start polling every 2 seconds
+updateProgress();
+pollInterval = setInterval(updateProgress, 2000);
+
+// Stop polling when page is unloaded
+window.addEventListener('beforeunload', () => {
+    clearInterval(pollInterval);
+});
+</script>
+{% endblock %}

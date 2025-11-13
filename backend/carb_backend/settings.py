@@ -33,6 +33,9 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv(
 # Application definition
 
 INSTALLED_APPS = [
+    # Local apps (must come before admin to override templates)
+    "converters",
+    # Django apps
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -43,8 +46,6 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "ckeditor",
-    # Local apps
-    "converters",
 ]
 
 MIDDLEWARE = [

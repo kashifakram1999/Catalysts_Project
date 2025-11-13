@@ -13,6 +13,8 @@ class Manufacturer(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = "Manufacturer"
+        verbose_name_plural = "Manufacturers"
         ordering = ['name']
         indexes = [
             models.Index(fields=['name']),
@@ -198,6 +200,8 @@ class BlogPost(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = "Blog Post"
+        verbose_name_plural = "Blog Posts"
         ordering = ['-published_at']
         indexes = [
             models.Index(fields=['slug']),
