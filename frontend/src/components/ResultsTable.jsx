@@ -83,9 +83,21 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
                   className="hover:bg-primary-50 dark:hover:bg-primary-700 cursor-pointer transition-colors"
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold">
-                      {converter.executive_order}
-                    </span>
+                    {converter.eo_document_url ? (
+                      <a
+                        href={converter.eo_document_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold hover:text-accent-700 dark:hover:text-accent-300 underline"
+                      >
+                        {converter.executive_order}
+                      </a>
+                    ) : (
+                      <span className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold">
+                        {converter.executive_order}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
@@ -125,9 +137,21 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
               className="bg-primary-50 dark:bg-primary-700 rounded-lg p-4 space-y-2 cursor-pointer hover:shadow-md transition-shadow"
             >
               <div className="flex justify-between items-start">
-                <span className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold">
-                  {converter.executive_order}
-                </span>
+                {converter.eo_document_url ? (
+                  <a
+                    href={converter.eo_document_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold hover:text-accent-700 dark:hover:text-accent-300 underline"
+                  >
+                    {converter.executive_order}
+                  </a>
+                ) : (
+                  <span className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold">
+                    {converter.executive_order}
+                  </span>
+                )}
                 <span className="px-2 py-1 text-xs font-semibold rounded-full bg-accent-100 dark:bg-accent-900 text-accent-800 dark:text-accent-200">
                   {converter.vehicle_class || 'N/A'}
                 </span>

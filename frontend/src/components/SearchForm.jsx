@@ -1,35 +1,27 @@
 import { useState, useEffect } from 'react';
 import { convertersAPI } from '../services/api';
+import CustomSelect from './CustomSelect';
 
 export default function SearchForm({ onSearch, onReset }) {
+  const [manufacturers, setManufacturers] = useState([]);
   const [makes, setMakes] = useState([]);
-  const [models, setModels] = useState([]);
   const [years, setYears] = useState([]);
-  const [engineSizes, setEngineSizes] = useState([]);
-  const [applicationTypes, setApplicationTypes] = useState([]);
+  const [vehicleClasses, setVehicleClasses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
 
   const [formData, setFormData] = useState({
+    manufacturer: '',
+    executive_order: '',
+    series_model: '',
     year: '',
     make: '',
-    model: '',
-    engine_size: '',
-    test_group: '',
-    application_type: '',
+    vehicle_class: '',
   });
 
   useEffect(() => {
     loadInitialData();
   }, []);
-
-  useEffect(() => {
-    if (formData.make) {
-      loadModels(formData.make);
-    } else {
-      setModels([]);
-    }
-  }, [formData.make]);
 
   const loadInitialData = async () => {
     setLoadingData(true);
@@ -40,36 +32,18 @@ export default function SearchForm({ onSearch, onReset }) {
         convertersAPI.getFilters(),
       ]);
 
-      console.log('Makes:', makesRes.data);
-      console.log('Years:', yearsRes.data);
-      console.log('Filters:', filtersRes.data);
-
       setMakes(makesRes.data || []);
       setYears(yearsRes.data.years || []);
-      setApplicationTypes(filtersRes.data.application_types || []);
-
-      // Extract unique engine sizes from filters if available
-      const engineSizesFromFilters = filtersRes.data.engine_sizes || [];
-      setEngineSizes(engineSizesFromFilters);
+      setManufacturers(filtersRes.data.manufacturers || []);
+      setVehicleClasses(filtersRes.data.vehicle_classes || []);
     } catch (error) {
       console.error('Error loading initial data:', error);
-      // Set empty arrays on error
       setMakes([]);
       setYears([]);
-      setApplicationTypes([]);
+      setManufacturers([]);
+      setVehicleClasses([]);
     } finally {
       setLoadingData(false);
-    }
-  };
-
-  const loadModels = async (make) => {
-    try {
-      const res = await convertersAPI.getModels(make);
-      console.log('Models for', make, ':', res.data);
-      setModels(res.data || []);
-    } catch (error) {
-      console.error('Error loading models:', error);
-      setModels([]);
     }
   };
 
@@ -95,14 +69,13 @@ export default function SearchForm({ onSearch, onReset }) {
 
   const handleReset = () => {
     setFormData({
+      manufacturer: '',
+      executive_order: '',
+      series_model: '',
       year: '',
       make: '',
-      model: '',
-      engine_size: '',
-      test_group: '',
-      application_type: '',
+      vehicle_class: '',
     });
-    setModels([]);
     onReset();
   };
 
@@ -127,115 +100,114 @@ export default function SearchForm({ onSearch, onReset }) {
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Main Search Row - Similar to carbcats.com */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {/* Year Select */}
+        {/* Main Search Row - Matching PDF Structure */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Company (Manufacturer) */}
+          <div>
+            <label htmlFor="manufacturer" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Company
+            </label>
+            <CustomSelect
+              id="manufacturer"
+              name="manufacturer"
+              value={formData.manufacturer}
+              onChange={handleChange}
+              options={[
+                { value: '', label: 'All Companies' },
+                ...manufacturers.map(mfr => ({ value: mfr.name, label: mfr.name }))
+              ]}
+              placeholder="All Companies"
+              searchable={true}
+            />
+          </div>
+
+          {/* EO Number */}
+          <div>
+            <label htmlFor="executive_order" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              EO Number
+            </label>
+            <input
+              type="text"
+              id="executive_order"
+              name="executive_order"
+              value={formData.executive_order}
+              onChange={handleChange}
+              placeholder="e.g., D-193-65"
+              className="input-field"
+            />
+          </div>
+
+          {/* Series/Model */}
+          <div>
+            <label htmlFor="series_model" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Series/Model
+            </label>
+            <input
+              type="text"
+              id="series_model"
+              name="series_model"
+              value={formData.series_model}
+              onChange={handleChange}
+              placeholder="e.g., 44000/41000"
+              className="input-field"
+            />
+          </div>
+
+          {/* Model Year */}
           <div>
             <label htmlFor="year" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Year
+              Model Year
             </label>
-            <select
+            <CustomSelect
               id="year"
               name="year"
               value={formData.year}
               onChange={handleChange}
-              className="input-field"
-            >
-              <option value="">All Years</option>
-              {years.sort((a, b) => b - a).map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'All Years' },
+                ...[...years].sort((a, b) => b - a).map(year => ({ value: year.toString(), label: year.toString() }))
+              ]}
+              placeholder="All Years"
+              searchable={true}
+            />
           </div>
 
-          {/* Make Select */}
+          {/* Make */}
           <div>
             <label htmlFor="make" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
               Make
             </label>
-            <select
+            <CustomSelect
               id="make"
               name="make"
               value={formData.make}
               onChange={handleChange}
-              className="input-field"
-            >
-              <option value="">All Makes</option>
-              {makes.map(make => (
-                <option key={make} value={make}>{make}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Model Select */}
-          <div>
-            <label htmlFor="model" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Model
-            </label>
-            <select
-              id="model"
-              name="model"
-              value={formData.model}
-              onChange={handleChange}
-              disabled={!formData.make}
-              className="input-field disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="">All Models</option>
-              {models.map(model => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Engine Size Input */}
-          <div>
-            <label htmlFor="engine_size" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Engine Size
-            </label>
-            <input
-              type="text"
-              id="engine_size"
-              name="engine_size"
-              value={formData.engine_size}
-              onChange={handleChange}
-              placeholder="e.g., 2.9"
-              className="input-field"
+              options={[
+                { value: '', label: 'All Makes' },
+                ...makes.map(make => ({ value: make, label: make }))
+              ]}
+              placeholder="All Makes"
+              searchable={true}
             />
           </div>
 
-          {/* Group (Test Group) Input */}
+          {/* Class (Vehicle Class) */}
           <div>
-            <label htmlFor="test_group" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Group
+            <label htmlFor="vehicle_class" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Class
             </label>
-            <input
-              type="text"
-              id="test_group"
-              name="test_group"
-              value={formData.test_group}
+            <CustomSelect
+              id="vehicle_class"
+              name="vehicle_class"
+              value={formData.vehicle_class}
               onChange={handleChange}
-              placeholder="Test Group"
-              className="input-field"
+              options={[
+                { value: '', label: 'All Classes' },
+                ...vehicleClasses.map(vc => ({ value: vc, label: vc }))
+              ]}
+              placeholder="All Classes"
+              searchable={true}
             />
-          </div>
-
-          {/* Application Select */}
-          <div>
-            <label htmlFor="application_type" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Application
-            </label>
-            <select
-              id="application_type"
-              name="application_type"
-              value={formData.application_type}
-              onChange={handleChange}
-              className="input-field"
-            >
-              <option value="">All Types</option>
-              {applicationTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
           </div>
         </div>
 

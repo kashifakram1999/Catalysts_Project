@@ -98,9 +98,17 @@ class Command(BaseCommand):
 
                 # Get or create manufacturer
                 manufacturer_name = cleaned_data.get('manufacturer_name', 'Unknown')
-                manufacturer, _ = Manufacturer.objects.get_or_create(
-                    name=manufacturer_name
+                manufacturer_contact = cleaned_data.get('manufacturer_contact')
+
+                manufacturer, created = Manufacturer.objects.get_or_create(
+                    name=manufacturer_name,
+                    defaults={'contact_info': manufacturer_contact} if manufacturer_contact else {}
                 )
+
+                # Update contact_info if manufacturer exists and has new contact info
+                if not created and manufacturer_contact and manufacturer.contact_info != manufacturer_contact:
+                    manufacturer.contact_info = manufacturer_contact
+                    manufacturer.save()
 
                 # Prepare converter data
                 converter_data = {

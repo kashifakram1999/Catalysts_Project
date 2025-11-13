@@ -4,8 +4,8 @@ from .models import Manufacturer, CatalyticConverter
 
 @admin.register(Manufacturer)
 class ManufacturerAdmin(admin.ModelAdmin):
-    list_display = ['name', 'created_at', 'updated_at']
-    search_fields = ['name']
+    list_display = ['name', 'contact_info', 'created_at', 'updated_at']
+    search_fields = ['name', 'contact_info']
     list_filter = ['created_at']
     ordering = ['name']
 
@@ -15,10 +15,12 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
     list_display = [
         'executive_order',
         'manufacturer',
+        'series_model',
         'make',
+        'model',
         'model_year_start',
         'model_year_end',
-        'product_name',
+        'vehicle_class',
         'eo_date',
         'is_active'
     ]
@@ -27,15 +29,14 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
         'manufacturer',
         'make',
         'vehicle_class',
-        'application_type',
         'eo_date',
     ]
     search_fields = [
         'executive_order',
-        'product_name',
+        'series_model',
         'make',
         'model',
-        'test_group',
+        'manufacturer__name',
     ]
     ordering = ['-eo_date', 'make']
     date_hierarchy = 'eo_date'
@@ -45,7 +46,6 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
             'fields': (
                 'manufacturer',
                 'executive_order',
-                'product_name',
                 'series_model',
             )
         }),
@@ -56,17 +56,6 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
                 'model_year_start',
                 'model_year_end',
                 'vehicle_class',
-                'engine_size',
-            )
-        }),
-        ('Technical Specifications', {
-            'fields': (
-                'test_group',
-                'cert_level',
-                'application_type',
-                'converter_location',
-                'converter_type',
-                'quantity',
             )
         }),
         ('Dates & Status', {

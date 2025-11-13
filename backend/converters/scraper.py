@@ -138,6 +138,7 @@ class CARBScraper:
         lines = text.split('\n')
 
         current_manufacturer = None
+        current_manufacturer_contact = None
         i = 0
 
         while i < len(lines):
@@ -150,7 +151,14 @@ class CARBScraper:
 
             # Check for phone number line - indicates manufacturer section
             # Handle various phone formats: (XXX) XXX-XXXX, (XXX) XXX -XXXX, (XXX) XXX- XXXX
-            if re.search(r'\(\d{3}\)\s*\d{3}\s*-\s*\d{4}', line):
+            phone_match = re.search(r'\(\d{3}\)\s*\d{3}\s*-?\s*\d{4}', line)
+            if phone_match:
+                # Extract the phone number
+                current_manufacturer_contact = phone_match.group(0)
+                # Normalize phone format - remove spaces around dash and extra spaces
+                current_manufacturer_contact = re.sub(r'\s*-\s*', '-', current_manufacturer_contact)
+                current_manufacturer_contact = re.sub(r'\s+', ' ', current_manufacturer_contact)
+
                 # Look back for company name (usually 2-4 lines before phone)
                 manufacturer_parts = []
                 for j in range(max(0, i-4), i):
@@ -183,7 +191,7 @@ class CARBScraper:
                     current_manufacturer = ' '.join(current_manufacturer.split())
                     # Clean up common formatting issues from PDF extraction
                     current_manufacturer = current_manufacturer.replace('M anufacturing', 'Manufacturing')
-                    logger.info(f"Found manufacturer: {current_manufacturer}")
+                    logger.info(f"Found manufacturer: {current_manufacturer} - Contact: {current_manufacturer_contact}")
                 i += 1
                 continue
 
@@ -198,9 +206,10 @@ class CARBScraper:
                     # Parse the rest of the line after EO
                     rest_of_line = line[eo_match.end():].strip()
 
-                    # Extract Series/Model (numbers/codes before year)
+                    # Extract Series/Model (alphanumeric codes/text before year)
                     series_model = None
-                    series_match = re.search(r'^\s*([0-9/]+)', rest_of_line)
+                    # Match alphanumeric characters, dashes, slashes, spaces until we hit a year or end
+                    series_match = re.search(r'^\s*([A-Za-z0-9\-/\s]+?)(?=\s+(?:19|20)\d{2}|$)', rest_of_line)
                     if series_match:
                         series_model = series_match.group(1).strip()
                         rest_of_line = rest_of_line[series_match.end():].strip()
@@ -298,6 +307,7 @@ class CARBScraper:
                     # Create converter record
                     converter = {
                         'manufacturer_name': current_manufacturer,
+                        'manufacturer_contact': current_manufacturer_contact,
                         'executive_order': eo_number,
                         'series_model': series_model,
                         'model_year_start': model_year_start,
@@ -378,7 +388,7 @@ class CARBDataProcessor:
                     pass
 
         # Clean text fields
-        text_fields = ['make', 'model', 'product_name', 'manufacturer_name',
+        text_fields = ['make', 'model', 'product_name', 'manufacturer_name', 'manufacturer_contact',
                       'vehicle_class', 'test_group', 'cert_level', 'series_model', 'engine_size']
         for field in text_fields:
             if field in raw_data and raw_data[field]:

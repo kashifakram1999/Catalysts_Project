@@ -165,3 +165,12 @@ class CatalyticConverter(models.Model):
         elif self.model_year_start:
             return str(self.model_year_start)
         return "N/A"
+
+    @property
+    def eo_document_url(self):
+        """Return the CARB Executive Order document URL"""
+        if self.executive_order:
+            # Remove any asterisk prefix from EO number and convert to lowercase
+            eo_clean = self.executive_order.replace('*', '').lower()
+            return f"https://ww2.arb.ca.gov/sites/default/files/aftermarket/devices/eo/{eo_clean}.pdf"
+        return None
