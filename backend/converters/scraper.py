@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, date
 from typing import List, Dict, Optional
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,10 @@ class CARBScraper:
 
     BASE_URL = "https://ssl.arb.ca.gov/AftermarketParts/catalysts"
     PDF_URL = "https://ww2.arb.ca.gov/sites/default/files/aftermarket/aftermktcat/exemptcat09.pdf"
-    LOCAL_PDF = "/Users/muhmmadkashif/Desktop/Data.pdf"
+
+    # Use project-relative path that works in any deployment environment
+    BASE_DIR = Path(__file__).resolve().parent.parent  # backend directory
+    LOCAL_PDF = str(BASE_DIR / 'data' / 'Data.pdf')
 
     def __init__(self, use_local=True):
         self.use_local = use_local

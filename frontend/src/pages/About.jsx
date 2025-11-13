@@ -1,11 +1,17 @@
+import PageHero from '../components/PageHero';
+
 export default function About() {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <PageHero
+        eyebrow="Our Mission"
+        title="About CARB Catalytic Converters"
+        subtitle="We simplify CARB compliance by translating dense Executive Orders into searchable, action-ready insights for installers, shops, and car owners."
+        alignment="center"
+      />
+
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="card p-8">
-          <h1 className="text-3xl font-bold text-primary-900 dark:text-primary-100 mb-6">
-            About CARB Catalytic Converters
-          </h1>
 
           <div className="prose prose-primary dark:prose-invert max-w-none space-y-6">
             <section>

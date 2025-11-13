@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PageHero from '../components/PageHero';
 
 export default function FAQ() {
   const [openIndex, setOpenIndex] = useState(null);
@@ -43,16 +44,14 @@ export default function FAQ() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="text-3xl font-bold text-primary-900 dark:text-primary-100 mb-4">
-            Frequently Asked Questions
-          </h1>
-          <p className="text-primary-600 dark:text-primary-400">
-            Common questions about CARB catalytic converters
-          </p>
-        </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <PageHero
+        eyebrow="Need clarity?"
+        title="Frequently Asked Questions"
+        subtitle="Get quick answers about CARB regulations, Executive Orders, and how to use our lookup tool with confidence."
+      />
+
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 
         <div className="space-y-4">
           {faqs.map((faq, index) => (

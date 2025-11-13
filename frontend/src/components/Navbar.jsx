@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 
 export default function Navbar() {
   const [darkMode, setDarkMode] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const isDark = localStorage.getItem('darkMode') === 'true';
@@ -23,19 +24,29 @@ export default function Navbar() {
     }
   };
 
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+  };
+
   return (
     <nav className="bg-white dark:bg-primary-800 shadow-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center h-16">
-          <div className="flex items-center flex-1">
-            <Link to="/" className="flex items-center">
+        <div className="flex items-center justify-between h-16 gap-4">
+          {/* Logo */}
+          <div className="flex items-center flex-none">
+            <Link to="/" className="flex items-center" onClick={closeMobileMenu}>
               <span className="text-2xl font-bold text-accent-600 dark:text-accent-400">
                 CARB Catalysts
               </span>
             </Link>
           </div>
 
-          <div className="hidden md:flex flex-1 justify-center space-x-8">
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center space-x-8 justify-center flex-1 pr-16">
             <Link
               to="/"
               className="text-primary-700 dark:text-primary-300 hover:text-accent-600 dark:hover:text-accent-400 px-3 py-2 text-sm font-medium transition-colors"
@@ -54,9 +65,17 @@ export default function Navbar() {
             >
               FAQ
             </Link>
+            <Link
+              to="/blogs"
+              className="text-primary-700 dark:text-primary-300 hover:text-accent-600 dark:hover:text-accent-400 px-3 py-2 text-sm font-medium transition-colors"
+            >
+              Blogs
+            </Link>
           </div>
 
-          <div className="flex items-center justify-end flex-1">
+          {/* Right side buttons */}
+          <div className="flex items-center space-x-2 flex-none">
+            {/* Dark mode toggle */}
             <button
               onClick={toggleDarkMode}
               className="p-2 rounded-lg bg-primary-100 dark:bg-primary-700 hover:bg-primary-200 dark:hover:bg-primary-600 transition-colors"
@@ -72,8 +91,61 @@ export default function Navbar() {
                 </svg>
               )}
             </button>
+
+            {/* Mobile menu button */}
+            <button
+              onClick={toggleMobileMenu}
+              className="md:hidden p-2 rounded-lg bg-primary-100 dark:bg-primary-700 hover:bg-primary-200 dark:hover:bg-primary-600 transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? (
+                <svg className="w-6 h-6 text-primary-700 dark:text-primary-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 text-primary-700 dark:text-primary-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
+
+        {/* Mobile Navigation */}
+        {mobileMenuOpen && (
+          <div className="md:hidden py-4 border-t border-primary-200 dark:border-primary-700">
+            <div className="flex flex-col space-y-2">
+              <Link
+                to="/"
+                onClick={closeMobileMenu}
+                className="text-primary-700 dark:text-primary-300 hover:text-accent-600 dark:hover:text-accent-400 hover:bg-primary-50 dark:hover:bg-primary-700 px-3 py-2 text-base font-medium transition-colors rounded-md"
+              >
+                Search
+              </Link>
+              <Link
+                to="/about"
+                onClick={closeMobileMenu}
+                className="text-primary-700 dark:text-primary-300 hover:text-accent-600 dark:hover:text-accent-400 hover:bg-primary-50 dark:hover:bg-primary-700 px-3 py-2 text-base font-medium transition-colors rounded-md"
+              >
+                About
+              </Link>
+              <Link
+                to="/faq"
+                onClick={closeMobileMenu}
+                className="text-primary-700 dark:text-primary-300 hover:text-accent-600 dark:hover:text-accent-400 hover:bg-primary-50 dark:hover:bg-primary-700 px-3 py-2 text-base font-medium transition-colors rounded-md"
+              >
+                FAQ
+              </Link>
+              <Link
+                to="/blogs"
+                onClick={closeMobileMenu}
+                className="text-primary-700 dark:text-primary-300 hover:text-accent-600 dark:hover:text-accent-400 hover:bg-primary-50 dark:hover:bg-primary-700 px-3 py-2 text-base font-medium transition-colors rounded-md"
+              >
+                Blogs
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </nav>
   );

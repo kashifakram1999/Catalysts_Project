@@ -3,7 +3,7 @@ Django REST Framework serializers for catalytic converter data
 """
 
 from rest_framework import serializers
-from .models import Manufacturer, CatalyticConverter
+from .models import Manufacturer, CatalyticConverter, BlogPost
 
 
 class ManufacturerSerializer(serializers.ModelSerializer):
@@ -75,3 +75,33 @@ class SearchStatsSerializer(serializers.Serializer):
     unique_makes = serializers.IntegerField()
     year_range = serializers.DictField()
     latest_eo_date = serializers.DateField()
+
+
+class BlogPostSerializer(serializers.ModelSerializer):
+    """Serializer for published blog posts"""
+    excerpt = serializers.SerializerMethodField()
+    hero_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BlogPost
+        fields = [
+            'id',
+            'title',
+            'slug',
+            'excerpt',
+            'content',
+            'hero_image_url',
+            'published_at',
+        ]
+
+    def get_hero_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.hero_image:
+            url = obj.hero_image.url
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return None
+
+    def get_excerpt(self, obj):
+        return obj.generated_excerpt()
