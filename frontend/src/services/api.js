@@ -40,4 +40,15 @@ export const manufacturersAPI = {
   getManufacturer: (id) => api.get(`/manufacturers/${id}/`),
 };
 
+export const blogAPI = {
+  // Get the most recent published blog post
+  getLatest: () => api.get('/blogs/latest/'),
+
+  // Get all published blogs
+  getBlogs: (params) => api.get('/blogs/', { params }),
+
+  // Get a single blog by slug
+  getBlog: (slug) => api.get(`/blogs/${slug}/`),
+};
+
 export default api;

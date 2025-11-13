@@ -2,16 +2,17 @@
 API Views for catalytic converter data
 """
 
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q, Min, Max, Count
-from .models import Manufacturer, CatalyticConverter
+from .models import Manufacturer, CatalyticConverter, BlogPost
 from .serializers import (
     ManufacturerSerializer,
     CatalyticConverterListSerializer,
     CatalyticConverterDetailSerializer,
-    SearchStatsSerializer
+    SearchStatsSerializer,
+    BlogPostSerializer,
 )
 
 
@@ -218,3 +219,22 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
         }
 
         return Response(filters_data)
+
+
+class BlogPostViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only API for published blog posts"""
+
+    queryset = BlogPost.objects.filter(is_published=True).order_by('-published_at')
+    serializer_class = BlogPostSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    lookup_field = 'slug'
+    lookup_value_regex = '[^/]+'
+
+    @action(detail=False, methods=['get'])
+    def latest(self, request):
+        post = self.get_queryset().first()
+        if not post:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        serializer = self.get_serializer(post)
+        return Response(serializer.data)

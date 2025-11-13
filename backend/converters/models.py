@@ -1,5 +1,8 @@
 from django.db import models
 from django.utils import timezone
+from django.utils.html import strip_tags
+from django.utils.text import slugify
+from ckeditor.fields import RichTextField
 
 
 class Manufacturer(models.Model):
@@ -40,6 +43,12 @@ class CatalyticConverter(models.Model):
         blank=True,
         null=True,
         help_text="Series/Model number"
+    )
+    part_number = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Manufacturer part number"
     )
     product_name = models.CharField(
         max_length=500,
@@ -174,3 +183,45 @@ class CatalyticConverter(models.Model):
             eo_clean = self.executive_order.replace('*', '').lower()
             return f"https://ww2.arb.ca.gov/sites/default/files/aftermarket/devices/eo/{eo_clean}.pdf"
         return None
+
+
+class BlogPost(models.Model):
+    """Simple blog post that can be managed via the Django admin."""
+
+    title = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    content = RichTextField(help_text="Full blog content")
+    hero_image = models.ImageField(upload_to='blog_images/', help_text="Preview image shown on the homepage")
+    is_published = models.BooleanField(default=False)
+    published_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-published_at']
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['is_published', 'published_at'])
+        ]
+
+    def __str__(self):
+        return self.title
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.title)
+            slug = base_slug
+            counter = 1
+            while BlogPost.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def generated_excerpt(self, length=220):
+        text = strip_tags(self.content or '')
+        normalized = " ".join(text.split())
+        if len(normalized) <= length:
+            return normalized
+        truncated = normalized[:length].rsplit(' ', 1)[0]
+        return truncated.strip() + '...'

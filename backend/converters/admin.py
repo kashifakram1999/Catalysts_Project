@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Manufacturer, CatalyticConverter
+from .models import Manufacturer, CatalyticConverter, BlogPost
 
 
 @admin.register(Manufacturer)
@@ -84,3 +84,13 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
         updated = queryset.update(is_active=False)
         self.message_user(request, f'{updated} converter(s) marked as inactive.')
     mark_inactive.short_description = "Mark selected converters as inactive"
+
+
+@admin.register(BlogPost)
+class BlogPostAdmin(admin.ModelAdmin):
+    list_display = ['title', 'is_published', 'published_at', 'updated_at']
+    list_filter = ['is_published', 'published_at']
+    search_fields = ['title', 'content']
+    ordering = ['-published_at']
+    prepopulated_fields = {'slug': ('title',)}
+    readonly_fields = ['created_at', 'updated_at']
