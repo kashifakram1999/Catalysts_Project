@@ -22,12 +22,14 @@ class CatalyticConverterListSerializer(serializers.ModelSerializer):
     """Serializer for converter list view (minimal fields)"""
     manufacturer_name = serializers.CharField(source='manufacturer.name', read_only=True)
     year_range = serializers.CharField(read_only=True)
+    eo_document_url = serializers.CharField(read_only=True)
 
     class Meta:
         model = CatalyticConverter
         fields = [
             'id',
             'executive_order',
+            'eo_document_url',
             'manufacturer_name',
             'series_model',
             'make',
@@ -35,26 +37,35 @@ class CatalyticConverterListSerializer(serializers.ModelSerializer):
             'year_range',
             'model_year_start',
             'model_year_end',
-            'engine_size',
             'vehicle_class',
-            'application_type',
-            'converter_location',
-            'converter_type',
-            'quantity',
-            'cert_level',
-            'test_group',
             'eo_date',
         ]
 
 
 class CatalyticConverterDetailSerializer(serializers.ModelSerializer):
-    """Serializer for converter detail view (all fields)"""
+    """Serializer for converter detail view"""
     manufacturer = ManufacturerSerializer(read_only=True)
+    manufacturer_name = serializers.CharField(source='manufacturer.name', read_only=True)
     year_range = serializers.CharField(read_only=True)
+    eo_document_url = serializers.CharField(read_only=True)
 
     class Meta:
         model = CatalyticConverter
-        fields = '__all__'
+        fields = [
+            'id',
+            'executive_order',
+            'eo_document_url',
+            'manufacturer',
+            'manufacturer_name',
+            'series_model',
+            'make',
+            'model',
+            'year_range',
+            'model_year_start',
+            'model_year_end',
+            'vehicle_class',
+            'eo_date',
+        ]
 
 
 class SearchStatsSerializer(serializers.Serializer):

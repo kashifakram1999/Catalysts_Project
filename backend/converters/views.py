@@ -35,11 +35,10 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
         'executive_order',
-        'product_name',
         'make',
         'model',
         'manufacturer__name',
-        'test_group',
+        'series_model',
     ]
     ordering_fields = [
         'make',
@@ -97,11 +96,6 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
         if model:
             queryset = queryset.filter(model__icontains=model)
 
-        # Engine size filtering
-        engine_size = self.request.query_params.get('engine_size')
-        if engine_size:
-            queryset = queryset.filter(engine_size__icontains=engine_size)
-
         # Vehicle class filtering
         vehicle_class = self.request.query_params.get('vehicle_class')
         if vehicle_class:
@@ -115,35 +109,15 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
                 Q(manufacturer__name__icontains=manufacturer)
             )
 
-        # Application type filtering
-        application_type = self.request.query_params.get('application_type')
-        if application_type:
-            queryset = queryset.filter(application_type__icontains=application_type)
-
-        # Converter type filtering
-        converter_type = self.request.query_params.get('converter_type')
-        if converter_type:
-            queryset = queryset.filter(converter_type__icontains=converter_type)
-
-        # Converter location filtering
-        converter_location = self.request.query_params.get('converter_location')
-        if converter_location:
-            queryset = queryset.filter(converter_location__icontains=converter_location)
-
-        # Test group filtering
-        test_group = self.request.query_params.get('test_group')
-        if test_group:
-            queryset = queryset.filter(test_group__icontains=test_group)
-
         # Executive order filtering
         executive_order = self.request.query_params.get('executive_order')
         if executive_order:
             queryset = queryset.filter(executive_order__icontains=executive_order)
 
-        # Certification level filtering
-        cert_level = self.request.query_params.get('cert_level')
-        if cert_level:
-            queryset = queryset.filter(cert_level__icontains=cert_level)
+        # Series/Model filtering
+        series_model = self.request.query_params.get('series_model')
+        if series_model:
+            queryset = queryset.filter(series_model__icontains=series_model)
 
         return queryset
 
@@ -239,26 +213,6 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
                 is_active=True,
                 vehicle_class__isnull=False
             ).exclude(vehicle_class='').values_list('vehicle_class', flat=True).distinct()),
-
-            'application_types': list(CatalyticConverter.objects.filter(
-                is_active=True,
-                application_type__isnull=False
-            ).exclude(application_type='').values_list('application_type', flat=True).distinct()),
-
-            'converter_locations': list(CatalyticConverter.objects.filter(
-                is_active=True,
-                converter_location__isnull=False
-            ).exclude(converter_location='').values_list('converter_location', flat=True).distinct()),
-
-            'converter_types': list(CatalyticConverter.objects.filter(
-                is_active=True,
-                converter_type__isnull=False
-            ).exclude(converter_type='').values_list('converter_type', flat=True).distinct()),
-
-            'cert_levels': list(CatalyticConverter.objects.filter(
-                is_active=True,
-                cert_level__isnull=False
-            ).exclude(cert_level='').values_list('cert_level', flat=True).distinct()),
 
             'manufacturers': list(Manufacturer.objects.all().values('id', 'name').order_by('name')),
         }

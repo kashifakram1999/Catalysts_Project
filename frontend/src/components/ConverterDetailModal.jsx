@@ -34,9 +34,20 @@ export default function ConverterDetailModal({ converter, isOpen, onClose }) {
                       Converter Details
                     </h3>
                     <p className="mt-2 text-sm text-primary-500 dark:text-primary-400">
-                      Executive Order: <span className="font-mono font-semibold text-accent-600 dark:text-accent-400">
-                        {converter.executive_order}
-                      </span>
+                      Executive Order: {converter.eo_document_url ? (
+                        <a
+                          href={converter.eo_document_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono font-semibold text-accent-600 dark:text-accent-400 hover:text-accent-700 dark:hover:text-accent-300 underline"
+                        >
+                          {converter.executive_order}
+                        </a>
+                      ) : (
+                        <span className="font-mono font-semibold text-accent-600 dark:text-accent-400">
+                          {converter.executive_order}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <button
