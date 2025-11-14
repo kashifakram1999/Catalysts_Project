@@ -49,6 +49,7 @@ export default function FAQ() {
         eyebrow="Need clarity?"
         title="Frequently Asked Questions"
         subtitle="Get quick answers about CARB regulations, Executive Orders, and how to use our lookup tool with confidence."
+        alignment="center"
       />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
