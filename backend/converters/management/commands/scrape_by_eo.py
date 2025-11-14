@@ -16,8 +16,8 @@ class Command(BaseCommand):
         parser.add_argument(
             '--pages',
             type=int,
-            default=3,
-            help='Number of pages to scrape per EO (default: 3)'
+            default=None,
+            help='Maximum pages to scrape per EO (default: unlimited - scrapes all available pages)'
         )
         parser.add_argument(
             '--timeout',
@@ -57,7 +57,10 @@ class Command(BaseCommand):
         self.stdout.write("=" * 70)
         self.stdout.write(self.style.SUCCESS("CARB EO-Based Website Scraper"))
         self.stdout.write("=" * 70)
-        self.stdout.write(f"Pages per EO: {pages}")
+        if pages:
+            self.stdout.write(f"Pages per EO: {pages} (safety limit)")
+        else:
+            self.stdout.write(f"Pages per EO: Unlimited (scrape all available pages)")
         self.stdout.write(f"Timeout: {timeout}s")
         self.stdout.write(f"Headless: {headless}")
         if test_mode:

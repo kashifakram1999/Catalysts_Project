@@ -3,20 +3,34 @@ Admin views for data scraping operations
 Allows staff users to trigger scraping from the Django admin interface
 """
 
+from datetime import datetime
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.utils import timezone
-from django.core.management import call_command
-from django.http import JsonResponse, StreamingHttpResponse
-from django.core.cache import cache
-import io
-import sys
-import threading
-import time
+from django.http import JsonResponse
+from celery.result import AsyncResult
 from .models import CatalyticConverter, Manufacturer
-from .scraper import CARBScraper, CARBDataProcessor
+from .tasks import scrape_pdf_task, scrape_website_task
+
+
+def parse_scheduled_datetime(raw_value):
+    """
+    Convert the datetime-local form value into an aware datetime in the current timezone.
+    """
+    if not raw_value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(raw_value)
+    except ValueError as exc:
+        raise ValueError('Invalid schedule date/time. Please use the picker above.') from exc
+
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+
+    return parsed
 
 
 @staff_member_required
@@ -40,241 +54,121 @@ def scraper_dashboard(request):
 @staff_member_required
 def run_pdf_scraper(request):
     """
-    Trigger PDF scraping operation
+    Trigger PDF scraping operation using Celery
     """
     if request.method == 'POST':
-        use_local = request.POST.get('use_local', 'true') == 'true'
+        use_local = request.POST.get('use_local') == 'true'
         limit = request.POST.get('limit', None)
+        scheduled_time_raw = request.POST.get('scheduled_time', '').strip()
 
         try:
-            # Capture command output
-            out = io.StringIO()
-            err = io.StringIO()
+            # Convert limit to int if provided
+            limit_int = int(limit) if limit and limit.strip() else None
 
-            # Prepare command arguments
-            cmd_args = ['--source=pdf']
-            if limit:
-                cmd_args.append(f'--limit={limit}')
-            if use_local:
-                cmd_args.append('--use-local')
+            # Parse scheduled datetime (optional)
+            try:
+                scheduled_time = parse_scheduled_datetime(scheduled_time_raw)
+            except ValueError as exc:
+                messages.error(request, str(exc))
+                return redirect('admin:scraper_dashboard')
+
+            task_kwargs = {
+                'use_local': use_local,
+                'limit': limit_int,
+            }
+
+            # Launch Celery task
+            if scheduled_time and scheduled_time > timezone.now():
+                eta = scheduled_time.astimezone(timezone.utc)
+                task = scrape_pdf_task.apply_async(kwargs=task_kwargs, eta=eta)
+                progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=pdf"
+                display_time = timezone.localtime(scheduled_time).strftime('%B %d, %Y %I:%M %p %Z')
+                messages.success(
+                    request,
+                    f'PDF scraping scheduled for {display_time}. Task ID: {task.id}. '
+                    f'You can monitor it at {progress_url}'
+                )
+                return redirect('admin:scraper_dashboard')
             else:
-                cmd_args.append('--remote')
+                task = scrape_pdf_task.delay(**task_kwargs)
+                progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=pdf"
+                note = ''
+                if scheduled_time:
+                    note = ' (requested schedule was in the past, so it started immediately)'
+                messages.success(
+                    request,
+                    f'PDF scraping task started! Task ID: {task.id}{note}'
+                )
 
-            # Run the scraping command
-            call_command('scrape_carb_data', *cmd_args, stdout=out, stderr=err)
-
-            # Get output
-            output = out.getvalue()
-            error = err.getvalue()
-
-            if error:
-                messages.warning(request, f'Scraping completed with warnings: {error}')
-            else:
-                messages.success(request, 'PDF scraping completed successfully!')
-
-            # Add output to messages for display
-            if output:
-                for line in output.split('\n'):
-                    if line.strip():
-                        messages.info(request, line.strip())
+                # Redirect to progress page for live monitoring
+                return redirect(progress_url)
 
         except Exception as e:
-            messages.error(request, f'Error during PDF scraping: {str(e)}')
+            messages.error(request, f'Error starting PDF scraping task: {str(e)}')
 
         return redirect('admin:scraper_dashboard')
 
     return redirect('admin:scraper_dashboard')
 
 
-def run_scraper_background(scraper_type, cmd_name, cmd_args, task_id):
-    """Helper function to run scraper in background thread"""
-    import re
-    import logging
-
-    def strip_ansi_codes(text):
-        """Remove ANSI color codes from text"""
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        return ansi_escape.sub('', text)
-
-    try:
-        cache.set(f'scraper_{task_id}_status', 'running', timeout=3600)
-        cache.set(f'scraper_{task_id}_output', [], timeout=3600)
-
-        # Capture output line by line
-        output_lines = []
-        buffer = ""
-
-        class OutputCapture:
-            def write(self, text):
-                nonlocal buffer
-                buffer += text
-
-                # Process complete lines
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    line = strip_ansi_codes(line).strip()
-                    if line:
-                        output_lines.append(line)
-                        # Update cache immediately for each line
-                        cache.set(f'scraper_{task_id}_output', output_lines.copy(), timeout=3600)
-
-                # Also process buffer if it has content (for lines without \n)
-                if buffer.strip() and not '\n' in buffer:
-                    line = strip_ansi_codes(buffer).strip()
-                    if line and len(output_lines) > 0 and output_lines[-1] != line:
-                        output_lines.append(line)
-                        cache.set(f'scraper_{task_id}_output', output_lines.copy(), timeout=3600)
-
-            def flush(self):
-                nonlocal buffer
-                if buffer.strip():
-                    line = strip_ansi_codes(buffer).strip()
-                    if line:
-                        output_lines.append(line)
-                        cache.set(f'scraper_{task_id}_output', output_lines.copy(), timeout=3600)
-                    buffer = ""
-
-        # Custom logging handler to capture logger output
-        class CacheLogHandler(logging.Handler):
-            def emit(self, record):
-                try:
-                    msg = self.format(record)
-                    msg = strip_ansi_codes(msg).strip()
-                    if msg:
-                        output_lines.append(msg)
-                        cache.set(f'scraper_{task_id}_output', output_lines.copy(), timeout=3600)
-                except Exception:
-                    pass
-
-        out = OutputCapture()
-
-        # Setup logging capture
-        log_handler = CacheLogHandler()
-        log_handler.setLevel(logging.INFO)
-
-        # Get the converters logger (used by eo_scraper)
-        converters_logger = logging.getLogger('converters')
-        original_level = converters_logger.level
-        converters_logger.setLevel(logging.INFO)
-        converters_logger.addHandler(log_handler)
-
-        try:
-            # Run the command
-            call_command(cmd_name, *cmd_args, stdout=out, stderr=out)
-        finally:
-            # Remove our custom handler
-            converters_logger.removeHandler(log_handler)
-            converters_logger.setLevel(original_level)
-
-        # Flush any remaining buffer
-        out.flush()
-
-        # Mark as completed
-        cache.set(f'scraper_{task_id}_status', 'completed', timeout=3600)
-        cache.set(f'scraper_{task_id}_output', output_lines, timeout=3600)
-
-    except Exception as e:
-        cache.set(f'scraper_{task_id}_status', 'error', timeout=3600)
-        cache.set(f'scraper_{task_id}_error', str(e), timeout=3600)
-        # Add error to output
-        if 'output_lines' in locals():
-            output_lines.append(f"ERROR: {str(e)}")
-            cache.set(f'scraper_{task_id}_output', output_lines, timeout=3600)
-
-
 @staff_member_required
 def run_website_scraper(request):
     """
-    Trigger website scraping operation using EO-based scraper
+    Trigger website scraping operation using Celery and EO-based scraper
     """
     if request.method == 'POST':
-        headless = request.POST.get('headless', 'true') == 'true'
-        pages = request.POST.get('pages', '3')
+        headless = request.POST.get('headless') == 'true'
+        pages = request.POST.get('pages', '').strip()  # Empty by default (scrape all pages)
         test_mode = request.POST.get('test_mode', 'false') == 'true'
         eo_numbers = request.POST.get('eo_numbers', '').strip()
+        scheduled_time_raw = request.POST.get('scheduled_time', '').strip()
 
-        # Generate unique task ID
-        task_id = f"website_{int(time.time())}"
-
-        # Prepare command arguments for scrape_by_eo
-        cmd_args = []
-        if headless:
-            cmd_args.append('--headless')
-        else:
-            cmd_args.append('--visible')
-
-        if pages:
-            cmd_args.append(f'--pages={pages}')
-
-        if test_mode:
-            cmd_args.append('--test')
-
-        if eo_numbers:
-            cmd_args.append(f'--eo-numbers={eo_numbers}')
-
-        # Start scraper in background thread
-        thread = threading.Thread(
-            target=run_scraper_background,
-            args=('website', 'scrape_by_eo', cmd_args, task_id)
-        )
-        thread.daemon = True
-        thread.start()
-
-        # Redirect to progress page
-        return redirect(f'/admin/scraper-dashboard/progress/?task_id={task_id}&type=website')
-
-    return redirect('admin:scraper_dashboard')
-
-
-@staff_member_required
-def run_combined_scraper(request):
-    """
-    Trigger both PDF and EO-based website scraping operations
-    """
-    if request.method == 'POST':
         try:
-            # Capture command output
-            out = io.StringIO()
-            err = io.StringIO()
+            # Convert pages to int if provided
+            pages_int = int(pages) if pages else None
 
-            # Step 1: Run PDF scraper
-            messages.info(request, '📄 Starting PDF scraper...')
-            call_command('scrape_carb_data', '--source=pdf', '--use-local',
-                        stdout=out, stderr=err)
+            # Parse scheduled datetime (optional)
+            try:
+                scheduled_time = parse_scheduled_datetime(scheduled_time_raw)
+            except ValueError as exc:
+                messages.error(request, str(exc))
+                return redirect('admin:scraper_dashboard')
 
-            pdf_output = out.getvalue()
+            task_kwargs = {
+                'headless': headless,
+                'pages': pages_int,
+                'test_mode': test_mode,
+                'eo_numbers': eo_numbers if eo_numbers else None,
+            }
 
-            # Step 2: Run EO-based website scraper
-            messages.info(request, '🌐 Starting EO-based website scraper...')
-            out = io.StringIO()
-            err = io.StringIO()
-
-            call_command('scrape_by_eo', '--headless', '--pages=3',
-                        stdout=out, stderr=err)
-
-            web_output = out.getvalue()
-            error = err.getvalue()
-
-            if error:
-                messages.warning(request, f'Scraping completed with some warnings')
+            # Launch Celery task
+            if scheduled_time and scheduled_time > timezone.now():
+                eta = scheduled_time.astimezone(timezone.utc)
+                task = scrape_website_task.apply_async(kwargs=task_kwargs, eta=eta)
+                progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=website"
+                display_time = timezone.localtime(scheduled_time).strftime('%B %d, %Y %I:%M %p %Z')
+                messages.success(
+                    request,
+                    f'Website scraping scheduled for {display_time}. Task ID: {task.id}. '
+                    f'You can monitor it at {progress_url}'
+                )
+                return redirect('admin:scraper_dashboard')
             else:
-                messages.success(request, '✓ Combined scraping completed successfully!')
+                task = scrape_website_task.delay(**task_kwargs)
+                progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=website"
+                note = ''
+                if scheduled_time:
+                    note = ' (requested schedule was in the past, so it started immediately)'
+                messages.success(
+                    request,
+                    f'Website scraping task started! Task ID: {task.id}{note}'
+                )
 
-            # Parse and display results from both scrapers
-            messages.info(request, '=== PDF Scraper Results ===')
-            for line in pdf_output.split('\n'):
-                line = line.strip()
-                if line and any(keyword in line for keyword in ['Found', 'Created', 'Updated', 'Total', 'Errors']):
-                    messages.info(request, line)
-
-            messages.info(request, '=== Website Scraper Results ===')
-            for line in web_output.split('\n'):
-                line = line.strip()
-                if line and any(keyword in line for keyword in ['Total EOs', 'Successful', 'converters', 'Created', 'Updated']):
-                    messages.info(request, line)
+                # Redirect to progress page
+                return redirect(progress_url)
 
         except Exception as e:
-            messages.error(request, f'Error during combined scraping: {str(e)}')
+            messages.error(request, f'Error starting website scraping task: {str(e)}')
 
         return redirect('admin:scraper_dashboard')
 
@@ -324,19 +218,71 @@ def scraper_progress_page(request):
 @staff_member_required
 def scraper_progress_api(request):
     """
-    API endpoint to get current scraping progress
+    API endpoint to get current scraping progress from Celery task
     """
     task_id = request.GET.get('task_id')
 
     if not task_id:
         return JsonResponse({'error': 'No task_id provided'}, status=400)
 
-    status = cache.get(f'scraper_{task_id}_status', 'unknown')
-    output = cache.get(f'scraper_{task_id}_output', [])
-    error = cache.get(f'scraper_{task_id}_error', None)
+    try:
+        # Get Celery task result
+        task_result = AsyncResult(task_id)
 
-    return JsonResponse({
-        'status': status,
-        'output': output,
-        'error': error,
-    })
+        # Build response based on task state
+        response = {
+            'status': task_result.state,
+            'task_id': task_id,
+        }
+
+        if task_result.state == 'PENDING':
+            response.update({
+                'status': 'pending',
+                'output': ['Task is waiting to start...'],
+                'error': None,
+            })
+        elif task_result.state == 'PROGRESS':
+            # Get progress information from task meta
+            info = task_result.info
+            response.update({
+                'status': 'running',
+                'output': info.get('output', []),
+                'current': info.get('current', 0),
+                'total': info.get('total', 100),
+                'current_status': info.get('status', 'Running...'),
+                'error': None,
+            })
+        elif task_result.state == 'SUCCESS':
+            # Task completed successfully
+            result = task_result.result
+            response.update({
+                'status': 'completed',
+                'output': result.get('output', []),
+                'stats': result.get('stats', {}),
+                'message': result.get('message', 'Scraping completed successfully'),
+                'error': None,
+            })
+        elif task_result.state == 'FAILURE':
+            # Task failed
+            info = task_result.info
+            response.update({
+                'status': 'error',
+                'output': info.get('output', []) if isinstance(info, dict) else [],
+                'error': str(task_result.info) if not isinstance(info, dict) else info.get('error', str(task_result.info)),
+            })
+        else:
+            # Other states (RETRY, REVOKED, etc.)
+            response.update({
+                'status': task_result.state.lower(),
+                'output': ['Task status: ' + task_result.state],
+                'error': None,
+            })
+
+        return JsonResponse(response)
+
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': f'Error retrieving task status: {str(e)}',
+            'output': [],
+        }, status=500)

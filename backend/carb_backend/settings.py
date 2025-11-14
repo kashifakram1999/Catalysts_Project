@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 from decouple import config, Csv
+from celery.schedules import crontab
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -46,6 +47,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "ckeditor",
+    # Celery apps
+    "django_celery_beat",
+    "django_celery_results",
 ]
 
 MIDDLEWARE = [
@@ -181,4 +185,88 @@ CKEDITOR_CONFIGS = {
         "height": 300,
         "width": "100%",
     }
+}
+
+# ==============================================================================
+# CELERY CONFIGURATION
+# ==============================================================================
+
+# Celery broker URL (using Redis)
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+
+# Celery result backend (using Django database)
+CELERY_RESULT_BACKEND = 'django-db'
+
+# Celery task serialization
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+
+# Timezone configuration
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+
+# Task result expiration
+CELERY_RESULT_EXTENDED = True
+CELERY_RESULT_EXPIRES = 3600 * 24  # 24 hours
+
+# Task execution settings
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard limit
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft limit
+
+# Worker settings
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 50
+
+# Beat scheduler (for periodic tasks)
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Cache backend for Celery (using Redis)
+CELERY_CACHE_BACKEND = config('CELERY_CACHE_BACKEND', default='redis://localhost:6379/1')
+
+# Task routing
+CELERY_TASK_ROUTES = {
+    'converters.tasks.scrape_pdf_task': {'queue': 'scraping'},
+    'converters.tasks.scrape_website_task': {'queue': 'scraping'},
+}
+
+# Task result compression
+CELERY_RESULT_COMPRESSION = 'gzip'
+
+# Task result backend transport options
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    'master_name': 'mymaster',
+}
+
+# Logging
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
+
+# Periodic task schedule for Celery Beat
+CELERY_BEAT_SCHEDULE = {
+    'nightly_website_scrape': {
+        'task': 'converters.tasks.scrape_website_task',
+        'schedule': crontab(hour=2, minute=0),  # Run daily at 2:00 AM UTC
+        'options': {'queue': 'scraping'},
+        'kwargs': {
+            'headless': True,
+            'pages': None,
+            'test_mode': False,
+            'eo_numbers': None,
+        },
+    },
+    'weekly_pdf_scrape': {
+        'task': 'converters.tasks.scrape_pdf_task',
+        'schedule': crontab(hour=4, minute=0, day_of_week='sun'),  # Sundays at 4:00 AM UTC
+        'options': {'queue': 'scraping'},
+        'kwargs': {
+            'use_local': False,
+            'limit': None,
+        },
+    },
+    'daily_cleanup_task_results': {
+        'task': 'converters.tasks.cleanup_old_task_results',
+        'schedule': crontab(hour=5, minute=0),  # Daily cleanup at 5:00 AM UTC
+    },
 }

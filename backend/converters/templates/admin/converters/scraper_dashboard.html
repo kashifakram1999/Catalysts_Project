@@ -54,6 +54,39 @@
         margin-bottom: 20px;
     }
 
+    .scraper-subtitle {
+        margin: -10px 0 25px 0;
+        color: #6c757d;
+        font-size: 0.95em;
+    }
+
+    .website-scraper-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+
+    .option-card {
+        border: 1px solid #e3e6f0;
+        border-radius: 10px;
+        padding: 20px;
+        background: #fdfdfd;
+        box-shadow: inset 0 0 0 1px rgba(65, 118, 144, 0.05);
+        transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .option-card:hover {
+        border-color: #417690;
+        transform: translateY(-2px);
+    }
+
+    .option-card h3 {
+        margin-top: 0;
+        color: #417690;
+        font-size: 1.05em;
+    }
+
     .scraper-form {
         margin-bottom: 15px;
     }
@@ -74,7 +107,8 @@
         padding: 8px 12px;
         border: 1px solid #ddd;
         border-radius: 4px;
-        width: 200px;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .form-group input[type="checkbox"] {
@@ -95,6 +129,11 @@
 
     .btn-primary {
         background: #417690;
+        color: white;
+    }
+
+    .scraper-dashboard a.btn-primary,
+    .scraper-dashboard a.btn-primary:visited {
         color: white;
     }
 
@@ -232,7 +271,7 @@
     {% endif %}
 
     <!-- PDF Scraper Section -->
-    <div class="scraper-section">
+    {% comment %} <div class="scraper-section">
         <h2>📄 PDF Scraper</h2>
         <p class="description">
             Scrape catalytic converter data from the CARB PDF database.
@@ -243,6 +282,7 @@
             {% csrf_token %}
 
             <div class="form-group">
+                <input type="hidden" name="use_local" value="false">
                 <label>
                     <input type="checkbox" name="use_local" value="true" checked>
                     Use local PDF file (faster, recommended)
@@ -254,72 +294,88 @@
                 <input type="number" name="limit" id="pdf_limit" placeholder="Leave empty for all">
             </div>
 
+            <div class="form-group">
+                <label for="pdf_schedule">Schedule start (optional):</label>
+                <input type="datetime-local" name="scheduled_time" id="pdf_schedule">
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    Leave empty to run immediately. Date/time uses your local timezone.
+                </small>
+            </div>
+
             <button type="submit" class="btn btn-primary" onclick="return confirmScrape('PDF');">Run PDF Scraper</button>
         </form>
-    </div>
+    </div> {% endcomment %}
 
     <!-- Website Scraper Section -->
     <div class="scraper-section">
         <h2>🌐 Website Scraper (EO-Based)</h2>
-        <p class="description">
-            Scrape data from CARB website by Executive Order numbers.
-            This EO-based approach is more efficient and comprehensive.
+        <p class="scraper-subtitle">
+            Combine EO-specific scraping with safety limits or ad-hoc EO lists. Configure run mode, scope, and scheduling below.
         </p>
 
         <form method="post" action="{% url 'admin:run_website_scraper' %}" class="scraper-form">
             {% csrf_token %}
 
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" name="headless" value="true" checked>
-                    Run in headless mode (no browser window)
-                </label>
-            </div>
+            <div class="website-scraper-grid">
+                <div class="option-card">
+                    <h3>Run Mode</h3>
+                    <div class="form-group">
+                        <input type="hidden" name="headless" value="false">
+                        <label>
+                            <input type="checkbox" name="headless" value="true" checked>
+                            Headless (no browser window)
+                        </label>
+                    </div>
 
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" name="test_mode" value="true">
-                    Test mode (scrape only first 3 EO numbers)
-                </label>
-            </div>
+                    <div class="form-group">
+                        <input type="hidden" name="test_mode" value="false">
+                        <label>
+                            <input type="checkbox" name="test_mode" value="true">
+                            Test mode (first 3 EO numbers)
+                        </label>
+                    </div>
+                </div>
 
-            <div class="form-group">
-                <label for="pages">Pages per EO number:</label>
-                <input type="number" name="pages" id="pages" value="3" min="1" max="10"
-                       style="width: 100px;">
-                <small style="color: #666; display: block; margin-top: 5px;">
-                    Number of result pages to scrape for each EO (default: 3)
-                </small>
-            </div>
+                <div class="option-card">
+                    <h3>Scope Controls</h3>
+                    <div class="form-group">
+                        <label for="pages">Pages per EO (optional)</label>
+                        <input type="number" name="pages" id="pages" placeholder="All pages" min="1"
+                               style="width: 100%;">
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Set a maximum per EO to guard against runaway pagination.
+                        </small>
+                    </div>
 
-            <div class="form-group">
-                <label for="eo_numbers">Specific EO numbers (optional):</label>
-                <input type="text" name="eo_numbers" id="eo_numbers"
-                       placeholder="e.g., D-393-143,D-393-144"
-                       style="width: 400px;">
-                <small style="color: #666; display: block; margin-top: 5px;">
-                    Leave empty to scrape all EOs. Enter comma-separated EO numbers to scrape specific ones.
-                </small>
+                    <div class="form-group">
+                        <label for="eo_numbers">Target EO list (optional)</label>
+                        <textarea name="eo_numbers" id="eo_numbers" rows="3"
+                                  placeholder="e.g., D-393-143,D-393-144"
+                                  style="width: 100%; resize: vertical;"></textarea>
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Leave empty to scrape all EOs. Separate values with commas or new lines.
+                        </small>
+                    </div>
+                </div>
+
+                <div class="option-card">
+                    <h3>Scheduling</h3>
+                    <div class="form-group">
+                        <label for="website_schedule">Start time</label>
+                        <input type="datetime-local" name="scheduled_time" id="website_schedule" style="width: 100%;">
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Leave empty to run immediately. The time uses your local timezone.
+                        </small>
+                    </div>
+
+                    <div style="font-size: 0.9em; color: #555; margin-top: 10px;">
+                        <strong>Tip:</strong> Scheduled jobs will appear on the progress page once Celery picks them up.
+                        Keep the worker and beat processes running to honor the schedule.
+                    </div>
+                </div>
             </div>
 
             <button type="submit" class="btn btn-success" onclick="return confirmScrape('Website (EO-Based)');">Run Website Scraper</button>
-        </form>
-    </div>
-
-    <!-- Combined Scraper Section -->
-    <div class="scraper-section">
-        <h2>🔄 Combined Scraper</h2>
-        <p class="description">
-            Run both PDF and EO-based website scrapers in sequence.
-            This is the most comprehensive option and will fetch all available data from both sources.
-        </p>
-
-        <form method="post" action="{% url 'admin:run_combined_scraper' %}" class="scraper-form">
-            {% csrf_token %}
-            <p style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-                <strong>⚠️ Note:</strong> This will run both scrapers sequentially and may take 10-30 minutes to complete.
-            </p>
-            <button type="submit" class="btn btn-warning" onclick="return confirmScrape('Combined (PDF + EO-Based Website)');">Run Combined Scraper</button>
         </form>
     </div>
 

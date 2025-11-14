@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-CARB Website Scraper - EO Number Based Approach
-Scrapes catalytic converter data by searching each Executive Order number
+TEST VERSION - CARB Website Scraper with Fixed Pagination
+This test file implements automatic pagination detection instead of hard page limits
 """
 
 import time
@@ -23,14 +23,14 @@ from .models import Manufacturer, CatalyticConverter
 logger = logging.getLogger(__name__)
 
 
-class CARBEOScraper:
-    """Scrapes CARB data by searching Executive Order numbers"""
+class CARBEOScraperTest:
+    """TEST VERSION: Scrapes CARB data with auto-pagination detection"""
 
     BASE_URL = "https://ssl.arb.ca.gov/AftermarketParts/catalysts"
 
     def __init__(self, headless: bool = True, timeout: int = 20, pages_per_eo: Optional[int] = None):
         """
-        Initialize the EO-based scraper
+        Initialize the EO-based scraper (TEST VERSION)
 
         Args:
             headless: Run browser in headless mode
@@ -653,7 +653,7 @@ class CARBEOScraper:
             stats['total_eos'] = len(eo_numbers)
 
             logger.info("=" * 60)
-            logger.info(f"STARTING SCRAPE FOR {stats['total_eos']} EO NUMBERS")
+            logger.info(f"STARTING SCRAPE FOR {stats['total_eos']} EO NUMBERS (TEST VERSION)")
             if self.pages_per_eo:
                 logger.info(f"Safety limit: {self.pages_per_eo} pages per EO")
             else:
@@ -690,7 +690,7 @@ class CARBEOScraper:
                 time.sleep(2)
 
             logger.info("\n" + "=" * 60)
-            logger.info("SCRAPING COMPLETE")
+            logger.info("SCRAPING COMPLETE (TEST VERSION)")
             logger.info("=" * 60)
             logger.info(f"Total EOs processed: {stats['total_eos']}")
             logger.info(f"Successful: {stats['successful_eos']}")
