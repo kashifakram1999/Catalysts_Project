@@ -15,6 +15,9 @@ app = Celery('carb_backend')
 # Load configuration from Django settings with CELERY_ namespace
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
+# Allow coordinator tasks to wait for subtask results (needed for parallel scraping)
+app.conf.task_allow_error_cb_on_chord_header = True
+
 # Auto-discover tasks in all installed apps
 app.autodiscover_tasks()
 

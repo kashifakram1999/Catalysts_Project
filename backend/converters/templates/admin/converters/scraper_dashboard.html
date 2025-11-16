@@ -233,8 +233,6 @@
 
 {% block content %}
 <div class="scraper-dashboard">
-    <h1>Data Scraping Dashboard</h1>
-
     <!-- Display messages -->
     {% if messages %}
     <div class="messages-container">
@@ -376,6 +374,87 @@
             </div>
 
             <button type="submit" class="btn btn-success" onclick="return confirmScrape('Website (EO-Based)');">Run Website Scraper</button>
+        </form>
+    </div>
+
+    <!-- Parallel Website Scraper Section -->
+    <div class="scraper-section">
+        <h2>⚡ Parallel Website Scraper</h2>
+        <p class="scraper-subtitle">
+            Run multiple scraping workers in parallel for faster data collection. Ideal for scraping large numbers of EO numbers.
+        </p>
+
+        <form method="post" action="{% url 'admin:run_parallel_scraper' %}" class="scraper-form">
+            {% csrf_token %}
+
+            <div class="website-scraper-grid">
+                <div class="option-card">
+                    <h3>Worker Configuration</h3>
+                    <div class="form-group">
+                        <label for="num_workers">Number of Workers</label>
+                        <input type="number" name="num_workers" id="num_workers" value="4" min="1" max="10"
+                               style="width: 100%;" required>
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Recommended: 4-10 workers. More workers = faster scraping but higher resource usage.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <input type="hidden" name="headless" value="false">
+                        <label>
+                            <input type="checkbox" name="headless" value="true" checked>
+                            Headless (no browser window)
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <input type="hidden" name="test_mode" value="false">
+                        <label>
+                            <input type="checkbox" name="test_mode" value="true">
+                            Test mode (12 EO numbers only)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="option-card">
+                    <h3>Scope Controls</h3>
+                    <div class="form-group">
+                        <label for="parallel_pages">Pages per EO (optional)</label>
+                        <input type="number" name="pages" id="parallel_pages" placeholder="50 (default)" min="1"
+                               style="width: 100%;">
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Maximum pages to scrape per EO. Default is 50 pages.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="parallel_eo_numbers">Target EO list (optional)</label>
+                        <textarea name="eo_numbers" id="parallel_eo_numbers" rows="3"
+                                  placeholder="e.g., D-393-143,D-393-144"
+                                  style="width: 100%; resize: vertical;"></textarea>
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Leave empty to scrape all EOs. Separate values with commas or new lines.
+                        </small>
+                    </div>
+                </div>
+
+                <div class="option-card">
+                    <h3>Scheduling</h3>
+                    <div class="form-group">
+                        <label for="parallel_schedule">Start time</label>
+                        <input type="datetime-local" name="scheduled_time" id="parallel_schedule" style="width: 100%;">
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Leave empty to run immediately. The time uses your local timezone.
+                        </small>
+                    </div>
+
+                    <div style="font-size: 0.9em; color: #555; margin-top: 10px;">
+                        <strong>Note:</strong> Parallel scraping divides EO numbers among workers. Monitor progress on the progress page.
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-warning" onclick="return confirmScrape('Parallel Website');">Run Parallel Scraper</button>
         </form>
     </div>
 

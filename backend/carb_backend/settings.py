@@ -188,6 +188,20 @@ CKEDITOR_CONFIGS = {
 }
 
 # ==============================================================================
+# CACHE CONFIGURATION
+# ==============================================================================
+
+# Django cache configuration (using Redis - same database as broker for simplicity)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': config('CACHE_LOCATION', default='redis://localhost:6379/0'),
+        'KEY_PREFIX': 'carb',
+        'TIMEOUT': 3600,  # 1 hour default timeout
+    }
+}
+
+# ==============================================================================
 # CELERY CONFIGURATION
 # ==============================================================================
 
@@ -219,16 +233,22 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft limit
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 50
 
+# Allow tasks to wait for other tasks (needed for parallel scraping coordinator)
+CELERY_TASK_ALLOW_RESULT_BLOCKING = True
+
 # Beat scheduler (for periodic tasks)
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
-# Cache backend for Celery (using Redis)
-CELERY_CACHE_BACKEND = config('CELERY_CACHE_BACKEND', default='redis://localhost:6379/1')
+# Cache backend for Celery (using Redis - same as Django cache)
+CELERY_CACHE_BACKEND = config('CELERY_CACHE_BACKEND', default='redis://localhost:6379/0')
 
 # Task routing
 CELERY_TASK_ROUTES = {
     'converters.tasks.scrape_pdf_task': {'queue': 'scraping'},
     'converters.tasks.scrape_website_task': {'queue': 'scraping'},
+    'converters.tasks.parallel_scrape_website': {'queue': 'scraping'},
+    'converters.tasks.scrape_eo_batch': {'queue': 'scraping'},
+    'converters.tasks.aggregate_parallel_results': {'queue': 'scraping'},
 }
 
 # Task result compression
@@ -246,12 +266,13 @@ CELERY_TASK_SEND_SENT_EVENT = True
 # Periodic task schedule for Celery Beat
 CELERY_BEAT_SCHEDULE = {
     'nightly_website_scrape': {
-        'task': 'converters.tasks.scrape_website_task',
+        'task': 'converters.tasks.parallel_scrape_website',
         'schedule': crontab(hour=2, minute=0),  # Run daily at 2:00 AM UTC
         'options': {'queue': 'scraping'},
         'kwargs': {
+            'num_workers': 4,  # Use 4 parallel workers for faster scraping
             'headless': True,
-            'pages': None,
+            'pages': 50,  # Limit to 50 pages per EO to prevent timeouts
             'test_mode': False,
             'eo_numbers': None,
         },

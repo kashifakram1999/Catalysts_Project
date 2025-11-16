@@ -175,7 +175,7 @@ export default function SearchForm({ onSearch, onReset }) {
           {/* Make */}
           <div>
             <label htmlFor="make" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Make
+              Vehicle
             </label>
             <CustomSelect
               id="make"
@@ -183,10 +183,10 @@ export default function SearchForm({ onSearch, onReset }) {
               value={formData.make}
               onChange={handleChange}
               options={[
-                { value: '', label: 'All Makes' },
+                { value: '', label: 'All Vehicle' },
                 ...makes.map(make => ({ value: make, label: make }))
               ]}
-              placeholder="All Makes"
+              placeholder="All Vehicle"
               searchable={true}
             />
           </div>

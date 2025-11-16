@@ -159,6 +159,142 @@
         font-size: 12px;
         text-transform: uppercase;
     }
+
+    /* Parallel Worker Styles */
+    .workers-container {
+        margin-top: 30px;
+    }
+
+    .workers-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+    }
+
+    .worker-card {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .worker-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .worker-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .worker-header h3 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: bold;
+    }
+
+    .worker-badge {
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: bold;
+        text-transform: uppercase;
+        background: rgba(255,255,255,0.2);
+    }
+
+    .worker-badge.success {
+        background: #28a745;
+    }
+
+    .worker-badge.running {
+        background: #ffc107;
+        color: #333;
+        animation: pulse 2s infinite;
+    }
+
+    .worker-badge.pending {
+        background: #6c757d;
+    }
+
+    .worker-badge.failure {
+        background: #dc3545;
+    }
+
+    .worker-body {
+        padding: 15px 20px;
+    }
+
+    .worker-info {
+        margin-bottom: 12px;
+        font-size: 13px;
+        color: #666;
+    }
+
+    .worker-info strong {
+        color: #333;
+    }
+
+    .worker-progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+
+    .worker-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        transition: width 0.3s ease;
+    }
+
+    .worker-output {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px 15px;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .worker-output-line {
+        padding: 2px 0;
+        color: #495057;
+    }
+
+    .worker-eo-list {
+        font-size: 11px;
+        color: #6c757d;
+        margin-top: 8px;
+        padding: 8px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        max-height: 80px;
+        overflow-y: auto;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: bold;
+        color: #417690;
+        margin: 30px 0 15px 0;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #417690;
+    }
 </style>
 {% endblock %}
 
@@ -207,6 +343,12 @@
         <div class="output-empty">Waiting for scraper to start...</div>
     </div>
 
+    <!-- Workers section for parallel scraping -->
+    <div class="workers-container" id="workers-container" style="display: none;">
+        <h2 class="section-title">👷 Worker Progress</h2>
+        <div class="workers-grid" id="workers-grid"></div>
+    </div>
+
     <div class="actions" id="actions" style="display: none;">
         <a href="{% url 'admin:scraper_dashboard' %}" class="btn btn-primary">Back to Dashboard</a>
     </div>
@@ -214,18 +356,21 @@
 
 <script>
 const taskId = "{{ task_id }}";
+const scraperType = "{{ scraper_type }}";
 const progressApiUrl = "{% url 'admin:scraper_progress_api' %}";
 let pollInterval;
 let lastOutputLength = 0;
 
 function updateProgress() {
-    fetch(`${progressApiUrl}?task_id=${taskId}`)
+    fetch(`${progressApiUrl}?task_id=${taskId}&type=${scraperType}`)
         .then(response => response.json())
         .then(data => {
             const statusBadge = document.getElementById('status-badge');
             const spinner = document.getElementById('spinner');
             const outputContainer = document.getElementById('output');
             const actionsDiv = document.getElementById('actions');
+            const workersContainer = document.getElementById('workers-container');
+            const workersGrid = document.getElementById('workers-grid');
 
             // Update status badge
             statusBadge.className = 'status-badge status-' + data.status;
@@ -264,6 +409,25 @@ function updateProgress() {
                 outputContainer.innerHTML = '<div class="output-empty">Scraper is running... Waiting for output...</div>';
             }
 
+            // Handle parallel scraping workers
+            if (data.workers && data.workers.length > 0) {
+                workersContainer.style.display = 'block';
+                renderWorkers(data.workers, workersGrid);
+            } else if (data.status === 'completed' && workersContainer.style.display === 'block') {
+                // Keep workers visible when completed
+                workersContainer.style.display = 'block';
+            }
+
+            // Update stats from API if available
+            if (data.stats) {
+                document.getElementById('stats').style.display = 'grid';
+                if (data.stats.total_eos !== undefined) document.getElementById('total-eos').textContent = data.stats.total_eos;
+                if (data.stats.successful_eos !== undefined) document.getElementById('successful-eos').textContent = data.stats.successful_eos;
+                if (data.stats.total_converters !== undefined) document.getElementById('converters').textContent = data.stats.total_converters;
+                if (data.stats.created !== undefined) document.getElementById('created').textContent = data.stats.created;
+                if (data.stats.updated !== undefined) document.getElementById('updated').textContent = data.stats.updated;
+            }
+
             // Show error if present
             if (data.error) {
                 outputContainer.innerHTML += `<div class="output-line" style="color: #ff6b6b; font-weight: bold;">ERROR: ${escapeHtml(data.error)}</div>`;
@@ -273,6 +437,46 @@ function updateProgress() {
         .catch(error => {
             console.error('Error fetching progress:', error);
         });
+}
+
+function renderWorkers(workers, container) {
+    container.innerHTML = workers.map(worker => {
+        const stateClass = worker.state.toLowerCase();
+        const badgeClass = stateClass === 'success' ? 'success' :
+                          stateClass === 'progress' ? 'running' :
+                          stateClass === 'failure' ? 'failure' : 'pending';
+
+        const eoListHtml = worker.eo_numbers && worker.eo_numbers.length > 0
+            ? `<div class="worker-eo-list">
+                   <strong>EO Numbers:</strong> ${worker.eo_numbers.join(', ')}
+               </div>`
+            : '';
+
+        return `
+            <div class="worker-card">
+                <div class="worker-header">
+                    <h3>Worker ${worker.worker_number}</h3>
+                    <span class="worker-badge ${badgeClass}">${worker.state}</span>
+                </div>
+                <div class="worker-body">
+                    <div class="worker-info">
+                        <strong>Batch:</strong> ${worker.worker_number} |
+                        <strong>EOs:</strong> ${worker.eo_count} |
+                        <strong>Progress:</strong> ${worker.current}/${worker.total}
+                    </div>
+                    <div class="worker-progress-bar">
+                        <div class="worker-progress-fill" style="width: ${worker.progress}%"></div>
+                    </div>
+                    <div class="worker-output">
+                        ${worker.output && worker.output.length > 0
+                            ? worker.output.map(line => `<div class="worker-output-line">${escapeHtml(line)}</div>`).join('')
+                            : '<div class="worker-output-line">No output yet...</div>'}
+                    </div>
+                    ${eoListHtml}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 function updateStats(outputLines) {
