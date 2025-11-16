@@ -72,15 +72,15 @@ export default function ConverterDetailModal({ converter, isOpen, onClose }) {
                       <dd className="text-sm text-primary-900 dark:text-primary-100 space-y-1">
                         <div><span className="font-medium">Make:</span> {converter.make || 'N/A'}</div>
                         <div><span className="font-medium">Model:</span> {converter.model || 'N/A'}</div>
-                        <div><span className="font-medium">Year Range:</span> {converter.year_range}</div>
+                        <div><span className="font-medium">Year:</span> {converter.year_range}</div>
                         <div><span className="font-medium">Vehicle Class:</span> {converter.vehicle_class || 'N/A'}</div>
                       </dd>
                     </div>
 
-                    <DetailRow
+                    {/* <DetailRow
                       label="Executive Order Date"
                       value={converter.eo_date ? new Date(converter.eo_date).toLocaleDateString() : 'N/A'}
-                    />
+                    /> */}
                   </dl>
                 </div>
               </div>

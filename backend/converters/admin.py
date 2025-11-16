@@ -34,6 +34,9 @@ class CARBAdminSite(AdminSite):
             path('scraper-dashboard/run-website/',
                  self.admin_view(admin_views.run_website_scraper),
                  name='run_website_scraper'),
+            path('scraper-dashboard/run-parallel/',
+                 self.admin_view(admin_views.run_parallel_scraper),
+                 name='run_parallel_scraper'),
             path('scraper-dashboard/stats/',
                  self.admin_view(admin_views.scraper_stats_api),
                  name='scraper_stats_api'),
@@ -70,6 +73,7 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
         'model_year_start',
         'model_year_end',
         'vehicle_class',
+        'test_group',
         'eo_date',
         'is_active'
     ]
