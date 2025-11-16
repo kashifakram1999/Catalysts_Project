@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import ConverterDetailModal from './ConverterDetailModal';
 
+const RESULTS_PER_PAGE = 25;
+
 export default function ResultsTable({ results, loading, onPageChange, pagination }) {
   const [selectedConverter, setSelectedConverter] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -178,35 +180,108 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
         </div>
 
         {/* Pagination */}
-        {pagination && pagination.count > 0 && (
-          <div className="bg-primary-50 dark:bg-primary-900 px-4 py-3 border-t border-primary-200 dark:border-primary-700 sm:px-6">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-primary-700 dark:text-primary-300">
-                Showing <span className="font-medium">{((pagination.currentPage - 1) * 25) + 1}</span> to{' '}
-                <span className="font-medium">
-                  {Math.min(pagination.currentPage * 25, pagination.count)}
-                </span> of{' '}
-                <span className="font-medium">{pagination.count}</span> results
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => onPageChange(pagination.currentPage - 1)}
-                  disabled={!pagination.previous}
-                  className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => onPageChange(pagination.currentPage + 1)}
-                  disabled={!pagination.next}
-                  className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
+        {pagination && pagination.count > 0 && (() => {
+          const totalPages = Math.ceil(pagination.count / RESULTS_PER_PAGE);
+          const maxVisiblePages = 5;
+          let startPage = Math.max(1, pagination.currentPage - Math.floor(maxVisiblePages / 2));
+          let endPage = startPage + maxVisiblePages - 1;
+
+          if (endPage > totalPages) {
+            endPage = totalPages;
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+          }
+
+          const visiblePages = [];
+          for (let page = startPage; page <= endPage; page += 1) {
+            visiblePages.push(page);
+          }
+
+          const showFirstPage = startPage > 1;
+          const showLastPage = endPage < totalPages;
+          const showLeadingEllipsis = startPage > 2;
+          const showTrailingEllipsis = endPage < totalPages - 1;
+
+          const showingFrom = ((pagination.currentPage - 1) * RESULTS_PER_PAGE) + 1;
+          const showingTo = Math.min(pagination.currentPage * RESULTS_PER_PAGE, pagination.count);
+
+          const pageButtonBaseClasses =
+            'px-3 py-1 text-sm font-medium rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-accent-500';
+
+          const getPageButtonClasses = (page) => {
+            if (page === pagination.currentPage) {
+              return `${pageButtonBaseClasses} bg-accent-600 text-white border-accent-600 cursor-default`;
+            }
+
+            return `${pageButtonBaseClasses} bg-white text-primary-700 border-primary-200 hover:bg-primary-50 dark:bg-primary-800 dark:text-primary-100 dark:border-primary-600 dark:hover:bg-primary-700`;
+          };
+
+          return (
+            <div className="bg-primary-50 dark:bg-primary-900 px-4 py-3 border-t border-primary-200 dark:border-primary-700 sm:px-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="text-sm text-primary-700 dark:text-primary-300">
+                  Showing <span className="font-medium">{showingFrom}</span> to{' '}
+                  <span className="font-medium">{showingTo}</span> of{' '}
+                  <span className="font-medium">{pagination.count}</span> results
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => onPageChange(pagination.currentPage - 1)}
+                    disabled={!pagination.previous}
+                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {showFirstPage && (
+                      <button
+                        onClick={() => onPageChange(1)}
+                        disabled={pagination.currentPage === 1}
+                        className={getPageButtonClasses(1)}
+                        aria-current={pagination.currentPage === 1 ? 'page' : undefined}
+                      >
+                        1
+                      </button>
+                    )}
+                    {showLeadingEllipsis && (
+                      <span className="px-2 text-primary-400 dark:text-primary-500">…</span>
+                    )}
+                    {visiblePages.map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => onPageChange(page)}
+                        disabled={page === pagination.currentPage}
+                        className={getPageButtonClasses(page)}
+                        aria-current={page === pagination.currentPage ? 'page' : undefined}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    {showTrailingEllipsis && (
+                      <span className="px-2 text-primary-400 dark:text-primary-500">…</span>
+                    )}
+                    {showLastPage && (
+                      <button
+                        onClick={() => onPageChange(totalPages)}
+                        disabled={pagination.currentPage === totalPages}
+                        className={getPageButtonClasses(totalPages)}
+                        aria-current={pagination.currentPage === totalPages ? 'page' : undefined}
+                      >
+                        {totalPages}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onPageChange(pagination.currentPage + 1)}
+                    disabled={!pagination.next}
+                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Detail Modal */}

@@ -87,6 +87,26 @@ All blog endpoints return `excerpt`, `content` (HTML from CKEditor), hero image 
 
 Each command includes `--help` detailing available flags. Review scripts before use to ensure they align with your deployment constraints.
 
+## Celery Workers & Beat
+
+Celery powers both manual scrapes triggered from the admin dashboard and the scheduled scrapes defined in `CELERY_BEAT_SCHEDULE`. To run them locally:
+
+1. Make sure Redis is available at the URL referenced by `CELERY_BROKER_URL`/`CELERY_CACHE_BACKEND` (defaults to `redis://localhost:6379/0` and `/1`).  
+2. Apply the result/beat migrations if you have not already:
+   ```bash
+   python manage.py migrate django_celery_results django_celery_beat
+   ```
+3. Start a worker (add `--concurrency` as needed):
+   ```bash
+   celery -A carb_backend worker -l info
+   ```
+4. In another terminal start Celery Beat so the periodic scraping/cleanup jobs fire automatically:
+   ```bash
+   celery -A carb_backend beat -l info
+   ```
+
+With worker + beat running, scraping tasks launched from the admin use Celery queues, and the nightly website scrape, weekly PDF scrape, and daily cleanup tasks execute automatically. Use the Django admin “Periodic Tasks” interface (provided by `django_celery_beat`) if you need to pause or adjust the schedule without editing settings.
+
 ## Environment Settings
 
 Key settings live in `carb_backend/settings.py`:
