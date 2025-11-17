@@ -7,6 +7,8 @@ export default function SearchForm({ onSearch, onReset }) {
   const [makes, setMakes] = useState([]);
   const [years, setYears] = useState([]);
   const [vehicleClasses, setVehicleClasses] = useState([]);
+  const [executiveOrders, setExecutiveOrders] = useState([]);
+  const [seriesModels, setSeriesModels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
 
@@ -36,12 +38,16 @@ export default function SearchForm({ onSearch, onReset }) {
       setYears(yearsRes.data.years || []);
       setManufacturers(filtersRes.data.manufacturers || []);
       setVehicleClasses(filtersRes.data.vehicle_classes || []);
+      setExecutiveOrders(filtersRes.data.executive_orders || []);
+      setSeriesModels(filtersRes.data.series_models || []);
     } catch (error) {
       console.error('Error loading initial data:', error);
       setMakes([]);
       setYears([]);
       setManufacturers([]);
       setVehicleClasses([]);
+      setExecutiveOrders([]);
+      setSeriesModels([]);
     } finally {
       setLoadingData(false);
     }
@@ -114,7 +120,7 @@ export default function SearchForm({ onSearch, onReset }) {
               onChange={handleChange}
               options={[
                 { value: '', label: 'All Companies' },
-                ...manufacturers.map(mfr => ({ value: mfr.name, label: mfr.name }))
+                ...manufacturers.map(mfr => ({ value: mfr.id, label: mfr.name }))
               ]}
               placeholder="All Companies"
               searchable={true}
@@ -126,14 +132,17 @@ export default function SearchForm({ onSearch, onReset }) {
             <label htmlFor="executive_order" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
               EO Number
             </label>
-            <input
-              type="text"
+            <CustomSelect
               id="executive_order"
               name="executive_order"
               value={formData.executive_order}
               onChange={handleChange}
-              placeholder="e.g., D-193-65"
-              className="input-field"
+              options={[
+                { value: '', label: 'All EO Numbers' },
+                ...executiveOrders.map(eo => ({ value: eo, label: eo }))
+              ]}
+              placeholder="All EO Numbers"
+              searchable={true}
             />
           </div>
 
@@ -142,14 +151,17 @@ export default function SearchForm({ onSearch, onReset }) {
             <label htmlFor="series_model" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
               Series/Model
             </label>
-            <input
-              type="text"
+            <CustomSelect
               id="series_model"
               name="series_model"
               value={formData.series_model}
               onChange={handleChange}
-              placeholder="e.g., 44000/41000"
-              className="input-field"
+              options={[
+                { value: '', label: 'All Series/Models' },
+                ...seriesModels.map(sm => ({ value: sm, label: sm }))
+              ]}
+              placeholder="All Series/Models"
+              searchable={true}
             />
           </div>
 

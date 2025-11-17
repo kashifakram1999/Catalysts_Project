@@ -8,7 +8,8 @@ export default function CustomSelect({
   options,
   placeholder = 'Select...',
   className = '',
-  searchable = false
+  searchable = false,
+  allowFreeText = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -24,8 +25,23 @@ export default function CustomSelect({
       )
     : options;
 
-  // Get display value
-  const displayValue = value || placeholder;
+  // Get display value - find the label for the current value
+  const getDisplayValue = () => {
+    if (!value) return placeholder;
+
+    const selectedOption = options.find(option => {
+      const optionValue = typeof option === 'string' ? option : option.value;
+      return optionValue === value;
+    });
+
+    if (selectedOption) {
+      return typeof selectedOption === 'string' ? selectedOption : selectedOption.label;
+    }
+
+    return placeholder;
+  };
+
+  const displayValue = getDisplayValue();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -79,28 +95,40 @@ export default function CustomSelect({
 
   return (
     <div ref={dropdownRef} className={`relative ${className}`}>
-      {/* Selected value display */}
-      <button
-        type="button"
-        id={id}
-        onClick={toggleDropdown}
-        className="input-field w-full text-left flex items-center justify-between cursor-pointer"
-      >
-        <span className={value ? '' : 'text-primary-400 dark:text-primary-500'}>
-          {displayValue}
-        </span>
-        <svg
-          className={`h-5 w-5 text-primary-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
+      {/* Selected value display or text input */}
+      {allowFreeText ? (
+        <input
+          type="text"
+          id={id}
+          name={name}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className="input-field w-full"
+        />
+      ) : (
+        <button
+          type="button"
+          id={id}
+          onClick={toggleDropdown}
+          className="input-field w-full text-left flex items-center justify-between cursor-pointer"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+          <span className={value ? '' : 'text-primary-400 dark:text-primary-500'}>
+            {displayValue}
+          </span>
+          <svg
+            className={`h-5 w-5 text-primary-400 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      )}
 
-      {/* Dropdown menu */}
-      {isOpen && (
+      {/* Dropdown menu (only show for select mode, not free text) */}
+      {!allowFreeText && isOpen && (
         <div className="absolute z-50 mt-1 w-full bg-white dark:bg-primary-800 border border-primary-300 dark:border-primary-600 rounded-lg shadow-lg max-h-60 overflow-hidden">
           {/* Search input */}
           {searchable && (

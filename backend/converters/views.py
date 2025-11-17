@@ -216,6 +216,16 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
             ).exclude(vehicle_class='').values_list('vehicle_class', flat=True).distinct()),
 
             'manufacturers': list(Manufacturer.objects.all().values('id', 'name').order_by('name')),
+
+            'executive_orders': list(CatalyticConverter.objects.filter(
+                is_active=True,
+                executive_order__isnull=False
+            ).exclude(executive_order='').values_list('executive_order', flat=True).distinct().order_by('executive_order')),
+
+            'series_models': list(CatalyticConverter.objects.filter(
+                is_active=True,
+                series_model__isnull=False
+            ).exclude(series_model='').values_list('series_model', flat=True).distinct().order_by('series_model')),
         }
 
         return Response(filters_data)
