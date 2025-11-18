@@ -29,8 +29,8 @@ export const convertersAPI = {
   // Get statistics
   getStats: () => api.get('/converters/stats/'),
 
-  // Get all filter options
-  getFilters: () => api.get('/converters/filters/'),
+  // Get all filter options (supports filtering via query params)
+  getFilters: (params) => api.get('/converters/filters/', { params }),
 };
 
 export const manufacturersAPI = {
