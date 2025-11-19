@@ -33,12 +33,21 @@ def parse_scheduled_datetime(raw_value):
     return parsed
 
 
+def _get_admin_site():
+    """
+    Import the admin site lazily to avoid circular imports when building context.
+    """
+    from .admin import admin_site  # Local import to prevent circular dependency
+    return admin_site
+
+
 @staff_member_required
 def scraper_dashboard(request):
     """
     Main dashboard for scraping operations
     Shows stats and provides buttons to trigger scraping
     """
+    admin_context = _get_admin_site().each_context(request)
     context = {
         'title': 'Data Scraping Dashboard',
         'total_converters': CatalyticConverter.objects.count(),
@@ -48,6 +57,9 @@ def scraper_dashboard(request):
             last_scraped__isnull=False
         ).order_by('-last_scraped').first(),
     }
+    context.update(admin_context)
+    # Ensure templates expecting `app_list` continue to work with the sidebar
+    context.setdefault('app_list', admin_context.get('available_apps'))
     return render(request, 'admin/converters/scraper_dashboard.html', context)
 
 

@@ -54,16 +54,28 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
             return CatalyticConverterDetailSerializer
         return CatalyticConverterListSerializer
 
-    def get_queryset(self):
+    def _get_filter_params(self, exclude_keys=None):
         """
-        Filter queryset based on query parameters
+        Build a dictionary of query params excluding empty values and optional keys
         """
-        queryset = super().get_queryset()
+        exclude = set(exclude_keys or [])
+        params = {}
+        for key, value in self.request.query_params.items():
+            if key in exclude:
+                continue
+            if value not in (None, ''):
+                params[key] = value
+        return params
 
-        # Year filtering
-        year = self.request.query_params.get('year')
-        year_min = self.request.query_params.get('year_min')
-        year_max = self.request.query_params.get('year_max')
+    def filter_queryset_by_params(self, queryset, params):
+        """
+        Apply filtering logic shared by list and filter helper endpoints
+        """
+        params = params or {}
+
+        year = params.get('year')
+        year_min = params.get('year_min')
+        year_max = params.get('year_max')
 
         if year:
             try:
@@ -87,40 +99,42 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
             except ValueError:
                 pass
 
-        # Make filtering
-        make = self.request.query_params.get('make')
+        make = params.get('make')
         if make:
             queryset = queryset.filter(make__iexact=make)
 
-        # Model filtering
-        model = self.request.query_params.get('model')
+        model = params.get('model')
         if model:
             queryset = queryset.filter(model__icontains=model)
 
-        # Vehicle class filtering
-        vehicle_class = self.request.query_params.get('vehicle_class')
+        vehicle_class = params.get('vehicle_class')
         if vehicle_class:
             queryset = queryset.filter(vehicle_class__iexact=vehicle_class)
 
-        # Manufacturer filtering
-        manufacturer = self.request.query_params.get('manufacturer')
+        manufacturer = params.get('manufacturer')
         if manufacturer:
             queryset = queryset.filter(
                 Q(manufacturer__id=manufacturer) |
                 Q(manufacturer__name__icontains=manufacturer)
             )
 
-        # Executive order filtering
-        executive_order = self.request.query_params.get('executive_order')
+        executive_order = params.get('executive_order')
         if executive_order:
             queryset = queryset.filter(executive_order__icontains=executive_order)
 
-        # Series/Model filtering
-        series_model = self.request.query_params.get('series_model')
+        series_model = params.get('series_model')
         if series_model:
             queryset = queryset.filter(series_model__icontains=series_model)
 
         return queryset
+
+    def get_queryset(self):
+        """
+        Filter queryset based on query parameters
+        """
+        base_queryset = super().get_queryset()
+        params = self._get_filter_params()
+        return self.filter_queryset_by_params(base_queryset, params)
 
     @action(detail=False, methods=['get'])
     def makes(self, request):
@@ -161,9 +175,11 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def years(self, request):
         """Get available year range"""
-        year_range = CatalyticConverter.objects.filter(
-            is_active=True
-        ).aggregate(
+        base_queryset = super().get_queryset()
+        params = self._get_filter_params(exclude_keys=['year', 'year_min', 'year_max'])
+        queryset = self.filter_queryset_by_params(base_queryset, params)
+
+        year_range = queryset.aggregate(
             min_year=Min('model_year_start'),
             max_year=Max('model_year_end')
         )
@@ -204,18 +220,55 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def filters(self, request):
         """Get all available filter options"""
+        base_queryset = super().get_queryset()
+
+        def filtered_queryset(exclude_keys=None):
+            params = self._get_filter_params(exclude_keys=exclude_keys)
+            return self.filter_queryset_by_params(base_queryset, params)
+
+        makes_qs = filtered_queryset(exclude_keys=['make'])
+        vehicle_class_qs = filtered_queryset(exclude_keys=['vehicle_class'])
+        manufacturer_qs = filtered_queryset(exclude_keys=['manufacturer'])
+        executive_order_qs = filtered_queryset(exclude_keys=['executive_order'])
+        series_model_qs = filtered_queryset(exclude_keys=['series_model'])
+        years_qs = filtered_queryset(exclude_keys=['year', 'year_min', 'year_max'])
+
+        manufacturers = manufacturer_qs.filter(
+            manufacturer__isnull=False
+        ).values(
+            'manufacturer_id',
+            'manufacturer__name'
+        ).distinct().order_by('manufacturer__name')
+
+        year_range = years_qs.aggregate(
+            min_year=Min('model_year_start'),
+            max_year=Max('model_year_end')
+        )
+
+        years = []
+        if year_range['min_year'] is not None and year_range['max_year'] is not None:
+            years = list(range(year_range['min_year'], year_range['max_year'] + 1))
+
         filters_data = {
-            'makes': list(CatalyticConverter.objects.filter(
-                is_active=True,
+            'makes': list(makes_qs.filter(
                 make__isnull=False
             ).exclude(make='').values_list('make', flat=True).distinct().order_by('make')),
-
-            'vehicle_classes': list(CatalyticConverter.objects.filter(
-                is_active=True,
+            'vehicle_classes': list(vehicle_class_qs.filter(
                 vehicle_class__isnull=False
-            ).exclude(vehicle_class='').values_list('vehicle_class', flat=True).distinct()),
-
-            'manufacturers': list(Manufacturer.objects.all().values('id', 'name').order_by('name')),
+            ).exclude(vehicle_class='').values_list('vehicle_class', flat=True).distinct().order_by('vehicle_class')),
+            'manufacturers': [
+                {'id': item['manufacturer_id'], 'name': item['manufacturer__name']}
+                for item in manufacturers if item['manufacturer_id'] is not None
+            ],
+            'executive_orders': list(executive_order_qs.filter(
+                executive_order__isnull=False
+            ).exclude(executive_order='').values_list('executive_order', flat=True).distinct().order_by('executive_order')),
+            'series_models': list(series_model_qs.filter(
+                series_model__isnull=False
+            ).exclude(series_model='').values_list('series_model', flat=True).distinct().order_by('series_model')),
+            'years': years,
+            'min_year': year_range['min_year'],
+            'max_year': year_range['max_year'],
         }
 
         return Response(filters_data)

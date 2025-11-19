@@ -1,58 +1,134 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { convertersAPI } from '../services/api';
 import CustomSelect from './CustomSelect';
+
+const INITIAL_FORM_STATE = {
+  manufacturer: '',
+  executive_order: '',
+  series_model: '',
+  year: '',
+  make: '',
+  vehicle_class: '',
+};
+
+const buildFilterParams = (data = {}) => {
+  return Object.entries(data).reduce((params, [key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params[key] = value;
+    }
+    return params;
+  }, {});
+};
 
 export default function SearchForm({ onSearch, onReset }) {
   const [manufacturers, setManufacturers] = useState([]);
   const [makes, setMakes] = useState([]);
   const [years, setYears] = useState([]);
   const [vehicleClasses, setVehicleClasses] = useState([]);
+  const [executiveOrders, setExecutiveOrders] = useState([]);
+  const [seriesModels, setSeriesModels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [formData, setFormData] = useState(() => ({ ...INITIAL_FORM_STATE }));
+  const filtersRequestRef = useRef(0);
+  const isMounted = useRef(true);
+  const hasLoadedFilters = useRef(false);
 
-  const [formData, setFormData] = useState({
-    manufacturer: '',
-    executive_order: '',
-    series_model: '',
-    year: '',
-    make: '',
-    vehicle_class: '',
-  });
+  const syncFormSelections = useCallback((options) => {
+    setFormData(prevData => {
+      let hasChanges = false;
+      const nextState = { ...prevData };
 
-  useEffect(() => {
-    loadInitialData();
+      const dropIfMissing = (field, allowedValues) => {
+        if (nextState[field] && !allowedValues.includes(nextState[field])) {
+          nextState[field] = '';
+          hasChanges = true;
+        }
+      };
+
+      dropIfMissing('make', options.makes || []);
+      dropIfMissing('vehicle_class', options.vehicle_classes || []);
+      dropIfMissing('executive_order', options.executive_orders || []);
+      dropIfMissing('series_model', options.series_models || []);
+
+      if (nextState.manufacturer) {
+        const manufacturerIds = (options.manufacturers || []).map(item => String(item.id));
+        if (!manufacturerIds.includes(String(nextState.manufacturer))) {
+          nextState.manufacturer = '';
+          hasChanges = true;
+        }
+      }
+
+      if (nextState.year) {
+        const yearOptions = (options.years || []).map(year => year.toString());
+        if (!yearOptions.includes(nextState.year)) {
+          nextState.year = '';
+          hasChanges = true;
+        }
+      }
+
+      return hasChanges ? nextState : prevData;
+    });
   }, []);
 
-  const loadInitialData = async () => {
-    setLoadingData(true);
-    try {
-      const [makesRes, yearsRes, filtersRes] = await Promise.all([
-        convertersAPI.getMakes(),
-        convertersAPI.getYears(),
-        convertersAPI.getFilters(),
-      ]);
-
-      setMakes(makesRes.data || []);
-      setYears(yearsRes.data.years || []);
-      setManufacturers(filtersRes.data.manufacturers || []);
-      setVehicleClasses(filtersRes.data.vehicle_classes || []);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      setMakes([]);
-      setYears([]);
-      setManufacturers([]);
-      setVehicleClasses([]);
-    } finally {
-      setLoadingData(false);
+  const fetchFilterOptions = useCallback(async (filters = INITIAL_FORM_STATE, isInitial = false) => {
+    const params = buildFilterParams(filters);
+    const requestId = ++filtersRequestRef.current;
+    if (isInitial) {
+      setLoadingData(true);
     }
-  };
+
+    try {
+      const response = await convertersAPI.getFilters(params);
+      if (!isMounted.current || requestId !== filtersRequestRef.current) {
+        return;
+      }
+
+      const data = response.data || {};
+      setManufacturers(data.manufacturers || []);
+      setMakes(data.makes || []);
+      setYears(data.years || []);
+      setVehicleClasses(data.vehicle_classes || []);
+      setExecutiveOrders(data.executive_orders || []);
+      setSeriesModels(data.series_models || []);
+      syncFormSelections(data);
+    } catch (error) {
+      console.error('Error loading filter data:', error);
+    } finally {
+      if (isInitial && isMounted.current) {
+        setLoadingData(false);
+      }
+    }
+  }, [syncFormSelections]);
+
+  useEffect(() => {
+    isMounted.current = true;
+
+    fetchFilterOptions(INITIAL_FORM_STATE, true).then(() => {
+      if (isMounted.current) {
+        hasLoadedFilters.current = true;
+      }
+    });
+
+    return () => {
+      isMounted.current = false;
+    };
+  }, [fetchFilterOptions]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => {
+      const nextState = {
+        ...prev,
+        [name]: value
+      };
+
+      if (hasLoadedFilters.current) {
+        fetchFilterOptions(nextState);
+      }
+
+      return nextState;
+    });
   };
 
   const handleSubmit = (e) => {
@@ -68,14 +144,11 @@ export default function SearchForm({ onSearch, onReset }) {
   };
 
   const handleReset = () => {
-    setFormData({
-      manufacturer: '',
-      executive_order: '',
-      series_model: '',
-      year: '',
-      make: '',
-      vehicle_class: '',
-    });
+    const resetState = { ...INITIAL_FORM_STATE };
+    setFormData(resetState);
+    if (hasLoadedFilters.current) {
+      fetchFilterOptions(resetState);
+    }
     onReset();
   };
 
@@ -114,7 +187,7 @@ export default function SearchForm({ onSearch, onReset }) {
               onChange={handleChange}
               options={[
                 { value: '', label: 'All Companies' },
-                ...manufacturers.map(mfr => ({ value: mfr.name, label: mfr.name }))
+                ...manufacturers.map(mfr => ({ value: mfr.id, label: mfr.name }))
               ]}
               placeholder="All Companies"
               searchable={true}
@@ -126,14 +199,17 @@ export default function SearchForm({ onSearch, onReset }) {
             <label htmlFor="executive_order" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
               EO Number
             </label>
-            <input
-              type="text"
+            <CustomSelect
               id="executive_order"
               name="executive_order"
               value={formData.executive_order}
               onChange={handleChange}
-              placeholder="e.g., D-193-65"
-              className="input-field"
+              options={[
+                { value: '', label: 'All EO Numbers' },
+                ...executiveOrders.map(eo => ({ value: eo, label: eo }))
+              ]}
+              placeholder="All EO Numbers"
+              searchable={true}
             />
           </div>
 
@@ -142,14 +218,17 @@ export default function SearchForm({ onSearch, onReset }) {
             <label htmlFor="series_model" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
               Series/Model
             </label>
-            <input
-              type="text"
+            <CustomSelect
               id="series_model"
               name="series_model"
               value={formData.series_model}
               onChange={handleChange}
-              placeholder="e.g., 44000/41000"
-              className="input-field"
+              options={[
+                { value: '', label: 'All Series/Models' },
+                ...seriesModels.map(sm => ({ value: sm, label: sm }))
+              ]}
+              placeholder="All Series/Models"
+              searchable={true}
             />
           </div>
 

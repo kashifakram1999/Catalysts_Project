@@ -191,6 +191,10 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
             startPage = Math.max(1, endPage - maxVisiblePages + 1);
           }
 
+          if (totalPages <= 1) {
+            return null;
+          }
+
           const visiblePages = [];
           for (let page = startPage; page <= endPage; page += 1) {
             visiblePages.push(page);
