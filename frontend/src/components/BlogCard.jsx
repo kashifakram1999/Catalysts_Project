@@ -1,5 +1,16 @@
 import { Link } from 'react-router-dom';
 
+function decodeExcerpt(excerpt) {
+  if (!excerpt) return '';
+  if (typeof document === 'undefined') {
+    return excerpt;
+  }
+  const parser = document.createElement('textarea');
+  parser.innerHTML = excerpt;
+  // Replace non-breaking spaces so text wraps naturally.
+  return parser.value.replace(/\u00a0/g, ' ').trim();
+}
+
 export default function BlogCard({ post, variant = 'default' }) {
   if (!post) {
     return null;
@@ -38,7 +49,7 @@ export default function BlogCard({ post, variant = 'default' }) {
           <p className="mt-1 text-sm text-primary-500 dark:text-primary-400">{publishedDate}</p>
         )}
         <p className="mt-3 text-primary-600 dark:text-primary-300 flex-grow">
-          {post.excerpt}
+          {decodeExcerpt(post.excerpt)}
         </p>
         <div className="mt-4">
           <Link
