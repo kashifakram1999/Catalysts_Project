@@ -207,8 +207,8 @@ def scrape_pdf_task(self, use_local=True, limit=None):
 @shared_task(
     bind=True,
     name='converters.tasks.scrape_website_task',
-    soft_time_limit=10 * 60 * 60,  # Allow 10 hours before soft timeout for large runs
-    time_limit=(10 * 60 * 60) + 300,  # Hard limit trails soft limit by 5 minutes
+    soft_time_limit=20 * 60 * 60,  # Allow 20 hours before soft timeout for large runs
+    time_limit=(20 * 60 * 60) + 300,  # Hard limit trails soft limit by 5 minutes
 )
 def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_numbers=None):
     """
@@ -405,8 +405,8 @@ def cleanup_old_task_results():
 @shared_task(
     bind=True,
     name='converters.tasks.scrape_eo_batch',
-    soft_time_limit=10 * 60 * 60,  # 10 hours per batch
-    time_limit=(10 * 60 * 60) + 300,
+    soft_time_limit=20 * 60 * 60,  # 20 hours per batch
+    time_limit=(20 * 60 * 60) + 300,
 )
 def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, pages=50):
     """
@@ -634,8 +634,8 @@ def aggregate_parallel_results(self, batch_results):
 @shared_task(
     bind=True,
     name='converters.tasks.parallel_scrape_website',
-    soft_time_limit=10 * 60 * 60,  # 10 hours total
-    time_limit=(10 * 60 * 60) + 300,
+    soft_time_limit=20 * 60 * 60,  # 20 hours total
+    time_limit=(20 * 60 * 60) + 300,
 )
 def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_mode=False, eo_numbers=None):
     """
