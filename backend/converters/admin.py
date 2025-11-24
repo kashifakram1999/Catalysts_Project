@@ -75,7 +75,10 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
         'vehicle_class',
         'test_group',
         'eo_date',
-        'is_active'
+        'is_active',
+        'engine_size',
+        'converter_type',
+        
     ]
     list_filter = [
         'is_active',
