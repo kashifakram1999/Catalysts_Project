@@ -9,6 +9,9 @@ const INITIAL_FORM_STATE = {
   year: '',
   make: '',
   vehicle_class: '',
+  engine_size: '',
+  test_group: '',
+  converter_type: '',
 };
 
 const buildFilterParams = (data = {}) => {
@@ -27,6 +30,9 @@ export default function SearchForm({ onSearch, onReset }) {
   const [vehicleClasses, setVehicleClasses] = useState([]);
   const [executiveOrders, setExecutiveOrders] = useState([]);
   const [seriesModels, setSeriesModels] = useState([]);
+  const [engineSizes, setEngineSizes] = useState([]);
+  const [testGroups, setTestGroups] = useState([]);
+  const [converterTypes, setConverterTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [formData, setFormData] = useState(() => ({ ...INITIAL_FORM_STATE }));
@@ -50,6 +56,9 @@ export default function SearchForm({ onSearch, onReset }) {
       dropIfMissing('vehicle_class', options.vehicle_classes || []);
       dropIfMissing('executive_order', options.executive_orders || []);
       dropIfMissing('series_model', options.series_models || []);
+      dropIfMissing('engine_size', options.engine_sizes || []);
+      dropIfMissing('test_group', options.test_groups || []);
+      dropIfMissing('converter_type', options.converter_types || []);
 
       if (nextState.manufacturer) {
         const manufacturerIds = (options.manufacturers || []).map(item => String(item.id));
@@ -91,6 +100,9 @@ export default function SearchForm({ onSearch, onReset }) {
       setVehicleClasses(data.vehicle_classes || []);
       setExecutiveOrders(data.executive_orders || []);
       setSeriesModels(data.series_models || []);
+      setEngineSizes(data.engine_sizes || []);
+      setTestGroups(data.test_groups || []);
+      setConverterTypes(data.converter_types || []);
       syncFormSelections(data);
     } catch (error) {
       console.error('Error loading filter data:', error);
@@ -173,65 +185,8 @@ export default function SearchForm({ onSearch, onReset }) {
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Main Search Row - Matching PDF Structure */}
+        {/* First Search Row - Model Year, Vehicle, Class */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Company (Manufacturer) */}
-          <div>
-            <label htmlFor="manufacturer" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Company
-            </label>
-            <CustomSelect
-              id="manufacturer"
-              name="manufacturer"
-              value={formData.manufacturer}
-              onChange={handleChange}
-              options={[
-                { value: '', label: 'All Companies' },
-                ...manufacturers.map(mfr => ({ value: mfr.id, label: mfr.name }))
-              ]}
-              placeholder="All Companies"
-              searchable={true}
-            />
-          </div>
-
-          {/* EO Number */}
-          <div>
-            <label htmlFor="executive_order" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              EO Number
-            </label>
-            <CustomSelect
-              id="executive_order"
-              name="executive_order"
-              value={formData.executive_order}
-              onChange={handleChange}
-              options={[
-                { value: '', label: 'All EO Numbers' },
-                ...executiveOrders.map(eo => ({ value: eo, label: eo }))
-              ]}
-              placeholder="All EO Numbers"
-              searchable={true}
-            />
-          </div>
-
-          {/* Series/Model */}
-          <div>
-            <label htmlFor="series_model" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Series/Model
-            </label>
-            <CustomSelect
-              id="series_model"
-              name="series_model"
-              value={formData.series_model}
-              onChange={handleChange}
-              options={[
-                { value: '', label: 'All Series/Models' },
-                ...seriesModels.map(sm => ({ value: sm, label: sm }))
-              ]}
-              placeholder="All Series/Models"
-              searchable={true}
-            />
-          </div>
-
           {/* Model Year */}
           <div>
             <label htmlFor="year" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
@@ -251,7 +206,7 @@ export default function SearchForm({ onSearch, onReset }) {
             />
           </div>
 
-          {/* Make */}
+          {/* Make (Vehicle) */}
           <div>
             <label htmlFor="make" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
               Vehicle
@@ -285,6 +240,66 @@ export default function SearchForm({ onSearch, onReset }) {
                 ...vehicleClasses.map(vc => ({ value: vc, label: vc }))
               ]}
               placeholder="All Classes"
+              searchable={true}
+            />
+          </div>
+        </div>
+
+        {/* Second Search Row - Engine Size, Test Group, Converter Type */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Engine Size */}
+          <div>
+            <label htmlFor="engine_size" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Engine Size
+            </label>
+            <CustomSelect
+              id="engine_size"
+              name="engine_size"
+              value={formData.engine_size}
+              onChange={handleChange}
+              options={[
+                { value: '', label: 'All Engine Sizes' },
+                ...engineSizes.map(size => ({ value: size, label: size }))
+              ]}
+              placeholder="All Engine Sizes"
+              searchable={true}
+            />
+          </div>
+
+          {/* Test Group */}
+          <div>
+            <label htmlFor="test_group" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Test Group
+            </label>
+            <CustomSelect
+              id="test_group"
+              name="test_group"
+              value={formData.test_group}
+              onChange={handleChange}
+              options={[
+                { value: '', label: 'All Test Groups' },
+                ...testGroups.map(group => ({ value: group, label: group }))
+              ]}
+              placeholder="All Test Groups"
+              searchable={true}
+            />
+          </div>
+
+          {/* Converter Type */}
+          <div>
+            <label htmlFor="converter_type" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Application Type
+            </label>
+            <CustomSelect
+              id="converter_type"
+              name="converter_type"
+              value={formData.converter_type}
+              onChange={handleChange}
+              options={[
+                { value: '', label: 'All Converter Types' },
+                ...converterTypes.map(type => ({ value: type, label: type }))
+              ]}
+              placeholder="All Converter Types"
               searchable={true}
             />
           </div>

@@ -126,6 +126,22 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
         if series_model:
             queryset = queryset.filter(series_model__icontains=series_model)
 
+        engine_size = params.get('engine_size')
+        if engine_size:
+            queryset = queryset.filter(engine_size__icontains=engine_size)
+
+        test_group = params.get('test_group')
+        if test_group:
+            queryset = queryset.filter(test_group__icontains=test_group)
+
+        application_type = params.get('application_type')
+        if application_type:
+            queryset = queryset.filter(application_type__icontains=application_type)
+
+        converter_type = params.get('converter_type')
+        if converter_type:
+            queryset = queryset.filter(converter_type__icontains=converter_type)
+
         return queryset
 
     def get_queryset(self):
@@ -231,6 +247,10 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
         manufacturer_qs = filtered_queryset(exclude_keys=['manufacturer'])
         executive_order_qs = filtered_queryset(exclude_keys=['executive_order'])
         series_model_qs = filtered_queryset(exclude_keys=['series_model'])
+        engine_size_qs = filtered_queryset(exclude_keys=['engine_size'])
+        test_group_qs = filtered_queryset(exclude_keys=['test_group'])
+        application_type_qs = filtered_queryset(exclude_keys=['application_type'])
+        converter_type_qs = filtered_queryset(exclude_keys=['converter_type'])
         years_qs = filtered_queryset(exclude_keys=['year', 'year_min', 'year_max'])
 
         manufacturers = manufacturer_qs.filter(
@@ -266,6 +286,18 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
             'series_models': list(series_model_qs.filter(
                 series_model__isnull=False
             ).exclude(series_model='').values_list('series_model', flat=True).distinct().order_by('series_model')),
+            'engine_sizes': list(engine_size_qs.filter(
+                engine_size__isnull=False
+            ).exclude(engine_size='').values_list('engine_size', flat=True).distinct().order_by('engine_size')),
+            'test_groups': list(test_group_qs.filter(
+                test_group__isnull=False
+            ).exclude(test_group='').values_list('test_group', flat=True).distinct().order_by('test_group')),
+            'application_types': list(application_type_qs.filter(
+                application_type__isnull=False
+            ).exclude(application_type='').values_list('application_type', flat=True).distinct().order_by('application_type')),
+            'converter_types': list(converter_type_qs.filter(
+                converter_type__isnull=False
+            ).exclude(converter_type='').values_list('converter_type', flat=True).distinct().order_by('converter_type')),
             'years': years,
             'min_year': year_range['min_year'],
             'max_year': year_range['max_year'],
