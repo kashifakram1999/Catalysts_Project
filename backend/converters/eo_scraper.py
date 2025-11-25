@@ -335,7 +335,7 @@ class CARBEOScraper:
     # SINGLE EO SCRAPING (INTERNAL - CALLED BY RETRY LOGIC)
     # =========================================================================
 
-    def _scrape_single_eo(self, eo_number: str) -> Tuple[str, List[Dict], Optional[str]]:
+    def _scrape_single_eo(self, eo_number: str, scraper_run_id: Optional[int] = None, start_page: int = 1) -> Tuple[str, List[Dict], Optional[str]]:
         """
         Scrape a single EO number (internal method, no retry logic)
 
@@ -344,15 +344,21 @@ class CARBEOScraper:
 
         Args:
             eo_number: The EO number to scrape
+            scraper_run_id: Optional ScraperRun ID for page-level tracking
+            start_page: Page number to start from (for resume)
 
         Returns:
             Tuple of (status, converters_list, error_message)
-            - status: One of EOStatus constants
+            - status: One of EOStatus constants (or 'stopped' if stop was requested)
             - converters_list: List of converter dicts (empty if failed/no_results)
             - error_message: Error description if failed, None otherwise
         """
         try:
-            # Step 1: Search for the EO
+            # Step 1: Always search for the EO to get to page 1
+            # (Even when resuming from a later page, we need to search first)
+            if start_page > 1:
+                logger.info(f"Resuming EO {eo_number} from page {start_page} - searching first to get to page 1")
+
             search_result = self._search_by_eo_robust(eo_number)
 
             if search_result['status'] == 'no_results':
@@ -364,14 +370,19 @@ class CARBEOScraper:
                 logger.warning(f"EO {eo_number} | status=search_failed | error={error_msg}")
                 return EOStatus.FAILED, [], error_msg
 
-            # Step 2: Extract data from all pages
-            pagination_result = self._extract_multiple_pages_robust(eo_number)
+            # Step 2: Extract data from pages (starting from start_page)
+            # The _extract_multiple_pages_robust will handle navigation to the resume page
+            pagination_result = self._extract_multiple_pages_robust(eo_number, scraper_run_id, start_page)
 
             converters = pagination_result['converters']
 
             if pagination_result['status'] == 'complete':
                 logger.info(f"EO {eo_number} | status={EOStatus.SUCCESS} | converters={len(converters)}")
                 return EOStatus.SUCCESS, converters, None
+
+            elif pagination_result['status'] == 'stopped':
+                logger.info(f"EO {eo_number} | status=STOPPED | converters={len(converters)}")
+                return 'stopped', converters, None
 
             elif pagination_result['status'] == 'partial':
                 reason = pagination_result.get('error', 'pagination_timeout')
@@ -638,6 +649,226 @@ class CARBEOScraper:
         except Exception as e:
             return 1
 
+    def _navigate_to_page(self, target_page: int, eo_number: str = "", max_attempts: int = 20) -> bool:
+        """
+        Navigate to a specific page number using smart ellipsis handling
+
+        This method efficiently navigates to any page by:
+        1. Checking if target page is directly clickable
+        2. If not, clicking the RIGHT ellipsis (after current page) to reveal more pages
+        3. Repeating until target page is reached
+
+        IMPORTANT: Always clicks the RIGHT ellipsis (after current page), never the left one.
+        This ensures forward navigation to higher page numbers.
+
+        Args:
+            target_page: The page number to navigate to
+            eo_number: EO number being scraped (for logging)
+            max_attempts: Maximum attempts to prevent infinite loops
+
+        Returns:
+            True if navigation succeeded, False otherwise
+        """
+        table_locator = (By.ID, "ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_gvEOData")
+
+        if target_page <= 1:
+            logger.warning(f"[NAVIGATE] Invalid target page {target_page} for EO {eo_number}, must be > 1")
+            return False
+
+        logger.info("=" * 70)
+        logger.info(f"[NAVIGATE] STARTING NAVIGATION TO PAGE {target_page} for EO {eo_number}")
+        logger.info("=" * 70)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                current_page = self._get_current_page_number()
+                logger.info(f"[NAVIGATE] === Attempt {attempt}/{max_attempts} ===")
+                logger.info(f"[NAVIGATE] Current page: {current_page}")
+                logger.info(f"[NAVIGATE] Target page: {target_page}")
+                logger.info(f"[NAVIGATE] Distance: {target_page - current_page} pages")
+
+                if current_page == target_page:
+                    logger.info(f"[NAVIGATE] ✓✓✓ SUCCESS! Already on target page {target_page}")
+                    return True
+
+                if current_page > target_page:
+                    logger.error(f"[NAVIGATE] ✗ OVERSHOT! Currently on page {current_page}, target was {target_page}")
+                    logger.error(f"[NAVIGATE] Cannot navigate backward. Aborting.")
+                    return False
+
+                # Try to find and click target page directly
+                logger.info(f"[NAVIGATE] Step 1: Looking for page {target_page} button...")
+                target_page_xpath = f"//table[@id='ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_gvEOData']//tr[last()]//a[normalize-space(text())='{target_page}']"
+
+                try:
+                    target_page_button = WebDriverWait(self.driver, 3).until(
+                        EC.presence_of_element_located((By.XPATH, target_page_xpath))
+                    )
+
+                    # Target page is visible! Click it directly
+                    logger.info(f"[NAVIGATE] ✓ Target page {target_page} button found!")
+                    logger.info(f"[NAVIGATE] Step 2: Clicking page {target_page} button...")
+
+                    # Store current table for staleness detection
+                    current_table = self.driver.find_element(*table_locator)
+
+                    # Scroll and click
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_page_button)
+                    time.sleep(0.5)
+
+                    # Extract postback and click
+                    href = target_page_button.get_attribute("href") or ""
+                    if "__doPostBack" in href:
+                        match = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", href)
+                        if match:
+                            target, argument = match.groups()
+                            self.driver.execute_script(f"""
+                                var theForm = document.forms[0];
+                                theForm.__EVENTTARGET.value = '{target}';
+                                theForm.__EVENTARGUMENT.value = '{argument}';
+                                theForm.submit();
+                            """)
+                        else:
+                            self.driver.execute_script("arguments[0].click();", target_page_button)
+                    else:
+                        self.driver.execute_script("arguments[0].click();", target_page_button)
+
+                    # Wait for page reload
+                    WebDriverWait(self.driver, POSTBACK_WAIT_TIMEOUT).until(EC.staleness_of(current_table))
+                    time.sleep(2)
+
+                    # Return to EO Search tab
+                    self._wait_for_eo_search_tab_active(timeout=POSTBACK_WAIT_TIMEOUT)
+
+                    # Wait for table
+                    WebDriverWait(self.driver, POSTBACK_WAIT_TIMEOUT).until(
+                        EC.presence_of_element_located(table_locator)
+                    )
+                    time.sleep(1)
+
+                    # Verify we're on the target page
+                    new_page = self._get_current_page_number()
+                    if new_page == target_page:
+                        logger.info("=" * 70)
+                        logger.info(f"[NAVIGATE] ✓✓✓ SUCCESS! Navigated to page {target_page}")
+                        logger.info("=" * 70)
+                        return True
+                    else:
+                        logger.warning(f"[NAVIGATE] ⚠ Direct click landed on page {new_page}, expected {target_page}. Retrying...")
+                        continue
+
+                except TimeoutException:
+                    # Target page not directly visible, need to use ellipsis
+                    logger.info(f"[NAVIGATE] ✗ Page {target_page} button not visible")
+                    logger.info(f"[NAVIGATE] Step 2: Looking for RIGHT ellipsis to reveal more pages...")
+
+                    # Find pagination controls
+                    pagination_row_xpath = "//table[@id='ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_gvEOData']//tr[last()]"
+
+                    try:
+                        pagination_row = self.driver.find_element(By.XPATH, pagination_row_xpath)
+                        pagination_controls = pagination_row.find_elements(By.XPATH, ".//a | .//span")
+
+                        # Find the RIGHT ellipsis (after current page)
+                        right_ellipsis = None
+                        passed_current = False
+
+                        logger.info(f"[NAVIGATE] Scanning pagination controls (current page: {current_page})")
+                        logger.info(f"[NAVIGATE] Total pagination controls found: {len(pagination_controls)}")
+
+                        # First, log all controls for debugging
+                        for idx, control in enumerate(pagination_controls):
+                            text = control.text.strip()
+                            tag = control.tag_name.lower()
+                            logger.info(f"[NAVIGATE]   Control {idx}: <{tag}> text='{text}'")
+
+                        # Now find the RIGHT ellipsis
+                        for control in pagination_controls:
+                            text = control.text.strip()
+                            if not text:
+                                continue
+
+                            # Mark when we pass the current page
+                            if not passed_current and text == str(current_page):
+                                passed_current = True
+                                logger.info(f"[NAVIGATE]   ✓ Found current page marker: {current_page}")
+                                continue
+
+                            # After current page, look for ellipsis (must be an <a> tag, not <span>)
+                            # Check for both "..." and "…" (ellipsis character)
+                            is_ellipsis = (text == "..." or text == "…" or "..." in text or "…" in text)
+                            if passed_current and is_ellipsis and control.tag_name.lower() == "a":
+                                right_ellipsis = control
+                                logger.info(f"[NAVIGATE]   ✓ Found RIGHT ellipsis after page {current_page}")
+                                break
+
+                        if not right_ellipsis:
+                            logger.error(f"[NAVIGATE] ✗ No RIGHT ellipsis found after page {current_page}")
+                            logger.error(f"[NAVIGATE] passed_current flag: {passed_current}")
+                            logger.error(f"[NAVIGATE] This means target page {target_page} is not reachable from page {current_page}")
+                            return False
+
+                        # Click the RIGHT ellipsis to reveal more pages
+                        logger.info(f"[NAVIGATE] Step 3: Clicking RIGHT ellipsis to reveal pages beyond {current_page}...")
+
+                        # Store current table for staleness detection
+                        current_table = self.driver.find_element(*table_locator)
+
+                        # Scroll and click ellipsis
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", right_ellipsis)
+                        time.sleep(0.5)
+
+                        href = right_ellipsis.get_attribute("href") or ""
+                        if "__doPostBack" in href:
+                            match = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", href)
+                            if match:
+                                target, argument = match.groups()
+                                self.driver.execute_script(f"""
+                                    var theForm = document.forms[0];
+                                    theForm.__EVENTTARGET.value = '{target}';
+                                    theForm.__EVENTARGUMENT.value = '{argument}';
+                                    theForm.submit();
+                                """)
+                            else:
+                                self.driver.execute_script("arguments[0].click();", right_ellipsis)
+                        else:
+                            self.driver.execute_script("arguments[0].click();", right_ellipsis)
+
+                        # Wait for page reload
+                        WebDriverWait(self.driver, POSTBACK_WAIT_TIMEOUT).until(EC.staleness_of(current_table))
+                        time.sleep(2)
+
+                        # Return to EO Search tab
+                        self._wait_for_eo_search_tab_active(timeout=POSTBACK_WAIT_TIMEOUT)
+
+                        # Wait for table
+                        WebDriverWait(self.driver, POSTBACK_WAIT_TIMEOUT).until(
+                            EC.presence_of_element_located(table_locator)
+                        )
+                        time.sleep(1)
+
+                        new_page = self._get_current_page_number()
+                        logger.info(f"[NAVIGATE] ✓ Ellipsis click successful")
+                        logger.info(f"[NAVIGATE] Moved from page {current_page} → page {new_page}")
+                        logger.info(f"[NAVIGATE] Still need to reach page {target_page}. Continuing...")
+
+                        # Continue loop to try clicking target page again
+                        continue
+
+                    except NoSuchElementException as e:
+                        logger.error(f"[NAVIGATE] Pagination row not found: {e}")
+                        return False
+
+            except Exception as e:
+                logger.error(f"[NAVIGATE] Error during navigation attempt {attempt}: {e}")
+                if attempt >= max_attempts:
+                    return False
+                time.sleep(2)
+                continue
+
+        logger.error(f"[NAVIGATE] Failed to navigate to page {target_page} after {max_attempts} attempts")
+        return False
+
     def _click_next_results_page(self, current_page: Optional[int] = None, eo_number: str = "") -> bool:
         """
         Click the next numbered page button in pagination with robust error handling
@@ -812,7 +1043,7 @@ class CARBEOScraper:
             logger.error(f"[{eo_number}] {error_msg}")
             raise WebDriverException(error_msg)
 
-    def _extract_multiple_pages_robust(self, eo_number: str) -> Dict:
+    def _extract_multiple_pages_robust(self, eo_number: str, scraper_run_id: Optional[int] = None, start_page: int = 1) -> Dict:
         """
         Extract data from multiple pages with robust pagination error handling
 
@@ -822,25 +1053,69 @@ class CARBEOScraper:
 
         Args:
             eo_number: EO number being scraped
+            scraper_run_id: Optional ScraperRun ID for page-level tracking and stop checking
+            start_page: Page number to start from (for resume functionality)
 
         Returns:
             Dict with keys:
-            - status: 'complete', 'partial', or 'error'
+            - status: 'complete', 'partial', 'stopped', or 'error'
             - converters: List of converter dicts
             - error: Error message if status is 'partial' or 'error'
             - pages_scraped: Number of pages successfully scraped
         """
         all_converters = []
-        page_num = 1
+        page_num = start_page
 
         if self.pages_per_eo:
-            logger.info(f"Extracting pages for {eo_number} (max limit: {self.pages_per_eo})")
+            logger.info(f"Extracting pages for {eo_number} (max limit: {self.pages_per_eo}, starting from page {start_page})")
         else:
-            logger.info(f"Extracting all available pages for {eo_number} (no limit)")
+            logger.info(f"Extracting all available pages for {eo_number} (no limit, starting from page {start_page})")
 
         try:
+            # If resuming from a later page, navigate to that page first using smart navigation
+            if start_page > 1:
+                logger.info(f"[RESUME] Need to navigate from page 1 to page {start_page} for EO {eo_number}")
+                logger.info(f"[RESUME] Using smart navigation with ellipsis handling")
+
+                success = self._navigate_to_page(start_page, eo_number)
+
+                if not success:
+                    logger.error(f"[RESUME] Failed to navigate to resume page {start_page}")
+                    return {
+                        'status': 'error',
+                        'converters': [],
+                        'error': f'Could not navigate to resume page {start_page}',
+                        'pages_scraped': 0
+                    }
+
+                logger.info(f"[RESUME] ✓ Successfully navigated to resume page {start_page} for EO {eo_number}")
+                logger.info(f"[RESUME] Will start scraping from page {start_page} onwards")
+                logger.info(f"[RESUME] Note: Pages 1-{start_page-1} were already scraped before stop, data is preserved")
+
             while True:
                 logger.info(f"Processing page {page_num} for {eo_number}")
+                if start_page > 1 and page_num == start_page:
+                    logger.info(f"[RESUME] Starting from resume point - page {page_num}")
+
+                # Check if stop was requested (page-level checking)
+                if scraper_run_id:
+                    from .models import ScraperRun
+                    try:
+                        scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                        if scraper_run.stop_requested:
+                            logger.info(f"Stop requested during page {page_num} of {eo_number}. Stopping gracefully...")
+                            # Save what we have so far
+                            if all_converters:
+                                created, updated = self._save_converters(all_converters)
+                                logger.info(f"Saved {created} created, {updated} updated converters before stopping")
+                            return {
+                                'status': 'stopped',
+                                'converters': all_converters,
+                                'error': None,
+                                'pages_scraped': page_num - 1
+                            }
+                    except ScraperRun.DoesNotExist:
+                        logger.warning(f"ScraperRun {scraper_run_id} not found during page check")
 
                 # Extract current page data
                 try:
@@ -848,11 +1123,11 @@ class CARBEOScraper:
                 except Exception as e:
                     logger.error(f"Error extracting data from page {page_num}: {e}")
                     # If we can't extract even the first page, it's a failure
-                    if page_num == 1:
+                    if page_num == start_page:
                         return {
                             'status': 'error',
                             'converters': [],
-                            'error': f'Failed to extract page 1: {str(e)}',
+                            'error': f'Failed to extract page {start_page}: {str(e)}',
                             'pages_scraped': 0
                         }
                     # If we fail on a later page, return what we have as partial
@@ -867,7 +1142,23 @@ class CARBEOScraper:
                     logger.info(f"No data on page {page_num}, stopping pagination")
                     break
 
-                all_converters.extend(page_converters)
+                # Save converters from this page immediately
+                if page_converters:
+                    created, updated = self._save_converters(page_converters)
+                    logger.info(f"Page {page_num}: Saved {created} created, {updated} updated converters")
+                    all_converters.extend(page_converters)
+
+                    # Update ScraperRun with current page progress
+                    if scraper_run_id:
+                        from .models import ScraperRun
+                        try:
+                            scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                            scraper_run.current_eo_number = eo_number
+                            scraper_run.current_page_number = page_num
+                            scraper_run.save(update_fields=['current_eo_number', 'current_page_number', 'updated_at'])
+                        except ScraperRun.DoesNotExist:
+                            pass
+
                 logger.info(f"Total so far: {len(all_converters)} converters")
 
                 # Check if we've hit the optional safety limit
@@ -947,7 +1238,7 @@ class CARBEOScraper:
     # PER-EO RETRY LOGIC
     # =========================================================================
 
-    def process_eo_with_retries(self, eo_number: str) -> Dict:
+    def process_eo_with_retries(self, eo_number: str, scraper_run_id: Optional[int] = None, start_page: int = 1) -> Dict:
         """
         Process a single EO with retry logic and session recovery
 
@@ -958,11 +1249,13 @@ class CARBEOScraper:
 
         Args:
             eo_number: The EO number to process
+            scraper_run_id: Optional ScraperRun ID for page-level tracking
+            start_page: Page number to start from (for resume)
 
         Returns:
             Dict with keys:
             - eo_number: The EO number
-            - status: One of EOStatus constants
+            - status: One of EOStatus constants (or 'stopped')
             - converters: List of converter dicts (empty if failed/no_results)
             - error: Error message if failed, None otherwise
             - attempts: Number of attempts made
@@ -973,13 +1266,23 @@ class CARBEOScraper:
                     logger.info(f"Retry attempt {attempt}/{MAX_EO_RETRIES} for {eo_number}")
 
                 # Attempt to scrape this EO
-                status, converters, error = self._scrape_single_eo(eo_number)
+                status, converters, error = self._scrape_single_eo(eo_number, scraper_run_id, start_page)
 
                 # Success or legitimate no_results - don't retry
                 if status in [EOStatus.SUCCESS, EOStatus.NO_RESULTS]:
                     return {
                         'eo_number': eo_number,
                         'status': status,
+                        'converters': converters,
+                        'error': error,
+                        'attempts': attempt
+                    }
+
+                # Stopped - return immediately
+                if status == 'stopped':
+                    return {
+                        'eo_number': eo_number,
+                        'status': 'stopped',
                         'converters': converters,
                         'error': error,
                         'attempts': attempt
@@ -1146,7 +1449,7 @@ class CARBEOScraper:
     # MAIN SCRAPING ENTRY POINT (PUBLIC API)
     # =========================================================================
 
-    def scrape_by_eo_numbers(self, eo_numbers: List[str] = None) -> Dict[str, int]:
+    def scrape_by_eo_numbers(self, eo_numbers: List[str] = None, scraper_run_id: Optional[int] = None) -> Dict[str, int]:
         """
         Scrape data for specified EO numbers (or all if None)
 
@@ -1155,12 +1458,14 @@ class CARBEOScraper:
 
         Args:
             eo_numbers: List of EO numbers to scrape, or None to scrape all
+            scraper_run_id: Optional ID of ScraperRun model to enable stop/resume
 
         Returns:
             Dictionary with statistics including:
             - total_eos, successful_eos, failed_eos, no_results_eos, partial_eos
             - total_converters, created, updated
             - Lists of EOs by status
+            - stopped: Boolean indicating if scraper was stopped
         """
         stats = {
             'total_eos': 0,
@@ -1175,6 +1480,7 @@ class CARBEOScraper:
             'failed_eo_list': [],
             'no_results_eo_list': [],
             'partial_eo_list': [],
+            'stopped': False,
         }
 
         try:
@@ -1199,14 +1505,95 @@ class CARBEOScraper:
                 logger.info(f"No page limit - will scrape all available pages")
             logger.info("=" * 60)
 
+            # Try to find ScraperRun if not provided (for single worker scrapers)
+            if scraper_run_id is None:
+                from .models import ScraperRun
+                try:
+                    # Look for the most recent running single worker scraper
+                    running_scraper = ScraperRun.objects.filter(
+                        status='running',
+                        scraper_type='single'
+                    ).order_by('-started_at').first()
+
+                    if running_scraper:
+                        scraper_run_id = running_scraper.id
+                        logger.info(f"Found ScraperRun {scraper_run_id} for tracking progress")
+                except Exception as e:
+                    logger.warning(f"Could not find ScraperRun: {e}")
+
+            # Check for resume state (page-level resume)
+            resume_eo = None
+            resume_page = 1
+            skip_already_processed = False
+
+            if scraper_run_id:
+                from .models import ScraperRun
+                try:
+                    scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                    if scraper_run.current_eo_number and scraper_run.current_page_number:
+                        resume_eo = scraper_run.current_eo_number
+                        resume_page = scraper_run.current_page_number
+                        skip_already_processed = True
+                        logger.info(f"Resuming from EO {resume_eo}, page {resume_page}")
+                except ScraperRun.DoesNotExist:
+                    pass
+
             for idx, eo_number in enumerate(eo_numbers, 1):
+                # Skip already-processed EOs if resuming
+                if skip_already_processed:
+                    if eo_number != resume_eo:
+                        # Check if this EO was already completed
+                        if scraper_run_id:
+                            try:
+                                scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                                if eo_number in scraper_run.eo_numbers_processed:
+                                    logger.info(f"Skipping already-processed EO: {eo_number}")
+                                    continue
+                            except ScraperRun.DoesNotExist:
+                                pass
+                    else:
+                        # This is the resume EO, stop skipping after this
+                        skip_already_processed = False
+
                 logger.info(f"\n[{idx}/{stats['total_eos']}] Processing EO: {eo_number}")
 
-                # Process EO with retry logic
-                result = self.process_eo_with_retries(eo_number)
+                # Update current EO in ScraperRun (start from page 1 unless resuming)
+                start_page = 1
+                if eo_number == resume_eo and resume_page > 1:
+                    start_page = resume_page
+                    logger.info(f"Resuming EO {eo_number} from page {start_page}")
+                    # Clear resume state after using it
+                    resume_eo = None
+                    resume_page = 1
+
+                if scraper_run_id:
+                    from .models import ScraperRun
+                    try:
+                        scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                        scraper_run.current_eo_number = eo_number
+                        scraper_run.current_page_number = start_page
+                        scraper_run.save(update_fields=['current_eo_number', 'current_page_number', 'updated_at'])
+                    except ScraperRun.DoesNotExist:
+                        pass
+
+                # Process EO with retry logic (passing scraper_run_id and start_page)
+                result = self.process_eo_with_retries(eo_number, scraper_run_id, start_page)
 
                 status = result['status']
                 converters = result['converters']
+
+                # Handle stopped status
+                if status == 'stopped':
+                    logger.info(f"Scraper stopped during EO {eo_number}")
+                    stats['stopped'] = True
+                    if scraper_run_id:
+                        from .models import ScraperRun
+                        try:
+                            scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                            scraper_run.mark_stopped()
+                        except ScraperRun.DoesNotExist:
+                            pass
+                    break
 
                 # Update stats based on status
                 if status == EOStatus.SUCCESS:
@@ -1214,12 +1601,9 @@ class CARBEOScraper:
                     stats['total_converters'] += len(converters)
                     stats['successful_eo_list'].append(eo_number)
 
-                    # Save to database
-                    created, updated = self._save_converters(converters)
-                    stats['created'] += created
-                    stats['updated'] += updated
-
-                    logger.info(f"EO {eo_number} | status={EOStatus.SUCCESS} | saved {created} new, {updated} updated")
+                    # Note: Converters are now saved page-by-page, so no need to save here
+                    # Just log the success
+                    logger.info(f"EO {eo_number} | status={EOStatus.SUCCESS} | converters={len(converters)}")
 
                 elif status == EOStatus.NO_RESULTS:
                     stats['no_results_eos'] += 1
@@ -1231,17 +1615,36 @@ class CARBEOScraper:
                     stats['total_converters'] += len(converters)
                     stats['partial_eo_list'].append(eo_number)
 
-                    # Save partial data
-                    created, updated = self._save_converters(converters)
-                    stats['created'] += created
-                    stats['updated'] += updated
-
-                    logger.warning(f"EO {eo_number} | status={EOStatus.PARTIAL} | saved {created} new, {updated} updated | reason={result.get('error')}")
+                    # Note: Partial data is already saved page-by-page
+                    logger.warning(f"EO {eo_number} | status={EOStatus.PARTIAL} | converters={len(converters)} | reason={result.get('error')}")
 
                 else:  # FAILED
                     stats['failed_eos'] += 1
                     stats['failed_eo_list'].append(eo_number)
                     logger.error(f"EO {eo_number} | status={EOStatus.FAILED} | reason={result.get('error')}")
+
+                # Update ScraperRun progress if applicable
+                if scraper_run_id:
+                    from .models import ScraperRun
+                    try:
+                        scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                        scraper_run.processed_count = stats['successful_eos'] + stats['failed_eos'] + stats['no_results_eos'] + stats['partial_eos']
+                        scraper_run.success_count = stats['successful_eos']
+                        scraper_run.failed_count = stats['failed_eos']
+                        scraper_run.no_results_count = stats['no_results_eos']
+                        scraper_run.partial_count = stats['partial_eos']
+
+                        # Update processed EOs list
+                        if eo_number not in scraper_run.eo_numbers_processed:
+                            scraper_run.eo_numbers_processed.append(eo_number)
+
+                        # Track failed EOs separately
+                        if status == EOStatus.FAILED and eo_number not in scraper_run.eo_numbers_failed:
+                            scraper_run.eo_numbers_failed.append(eo_number)
+
+                        scraper_run.save()
+                    except ScraperRun.DoesNotExist:
+                        pass
 
                 # Brief pause between EOs
                 time.sleep(2)

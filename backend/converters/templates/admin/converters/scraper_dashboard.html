@@ -221,6 +221,50 @@
         border-radius: 4px;
         font-size: 0.9em;
     }
+
+    /* Loader styles */
+    .btn-with-loader {
+        position: relative;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+    }
+
+    .btn-loader {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .scraper-status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85em;
+        font-weight: bold;
+        margin-left: 10px;
+        vertical-align: middle;
+    }
+
+    .status-running {
+        background: #28a745;
+        color: white;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
 </style>
 {% endblock %}
 
@@ -471,6 +515,8 @@
 </div>
 
 <script>
+let checkInterval = null;
+
 function confirmScrape(type) {
     const message = `Are you sure you want to run the ${type} scraper?\n\n` +
                    `This may take several minutes to complete.\n` +
@@ -491,5 +537,206 @@ function confirmScrape(type) {
     }
     return false;
 }
+
+// Check for active scrapers and stopped scrapers
+async function checkActiveScrapers() {
+    try {
+        const response = await fetch('{% url "admin:check_active_scrapers_api" %}');
+        const data = await response.json();
+
+        if (data.has_active && data.active_scrapers.length > 0) {
+            updateButtonsWithScrapers(data.active_scrapers);
+            hideResumeButton();
+        } else {
+            resetButtons();
+            if (data.stopped_scraper) {
+                showResumeButton(data.stopped_scraper);
+            } else {
+                hideResumeButton();
+            }
+        }
+    } catch (error) {
+        console.error('Error checking active scrapers:', error);
+    }
+}
+
+// Update buttons to show running state
+function updateButtonsWithScrapers(scrapers) {
+    scrapers.forEach(scraper => {
+        const buttonSelector = scraper.scraper_type === 'parallel'
+            ? 'button[onclick*="Parallel Website"]'
+            : 'button[onclick*="Website (EO-Based)"]';
+
+        const button = document.querySelector(buttonSelector);
+        if (button) {
+            // Add loader and make clickable
+            button.classList.add('btn-with-loader');
+            button.innerHTML = `
+                <span class="btn-loader"></span>
+                Scraper Running (${scraper.progress_percentage}%)
+                <span class="scraper-status-badge status-running">Click to view</span>
+            `;
+
+            // Override click handler to redirect to progress page
+            button.onclick = function(e) {
+                e.preventDefault();
+                window.location.href = `{% url 'admin:scraper_progress' %}?task_id=${scraper.task_id}&type=${scraper.scraper_type}`;
+                return false;
+            };
+
+            // Disable form submission
+            const form = button.closest('form');
+            if (form) {
+                form.onsubmit = function(e) {
+                    e.preventDefault();
+                    window.location.href = `{% url 'admin:scraper_progress' %}?task_id=${scraper.task_id}&type=${scraper.scraper_type}`;
+                    return false;
+                };
+            }
+        }
+    });
+}
+
+// Reset buttons to normal state
+function resetButtons() {
+    const websiteBtn = document.querySelector('button[onclick*="Website (EO-Based)"]');
+    const parallelBtn = document.querySelector('button[onclick*="Parallel Website"]');
+
+    if (websiteBtn && websiteBtn.classList.contains('btn-with-loader')) {
+        websiteBtn.classList.remove('btn-with-loader');
+        websiteBtn.innerHTML = 'Run Website Scraper';
+        websiteBtn.onclick = function() { return confirmScrape('Website (EO-Based)'); };
+
+        const form = websiteBtn.closest('form');
+        if (form) form.onsubmit = null;
+    }
+
+    if (parallelBtn && parallelBtn.classList.contains('btn-with-loader')) {
+        parallelBtn.classList.remove('btn-with-loader');
+        parallelBtn.innerHTML = 'Run Parallel Scraper';
+        parallelBtn.onclick = function() { return confirmScrape('Parallel Website'); };
+
+        const form = parallelBtn.closest('form');
+        if (form) form.onsubmit = null;
+    }
+}
+
+// Show resume button for stopped scraper
+function showResumeButton(stoppedScraper) {
+    let resumeContainer = document.getElementById('resume-scraper-container');
+
+    if (!resumeContainer) {
+        // Create container if it doesn't exist
+        const statsSection = document.querySelector('.stats-grid');
+        if (statsSection) {
+            resumeContainer = document.createElement('div');
+            resumeContainer.id = 'resume-scraper-container';
+            resumeContainer.className = 'resume-scraper-section';
+            statsSection.insertAdjacentElement('afterend', resumeContainer);
+        } else {
+            console.error('Could not find .stats-grid element to insert resume button');
+            return;
+        }
+    }
+
+    if (resumeContainer) {
+        const resumeInfo = stoppedScraper.current_eo && stoppedScraper.current_page
+            ? `from EO ${stoppedScraper.current_eo}, page ${stoppedScraper.current_page}`
+            : `with ${stoppedScraper.remaining_count} remaining EO numbers`;
+
+        resumeContainer.innerHTML = `
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="margin-top: 0; color: #856404;">
+                    ⏸️ Stopped Scraper Available
+                </h3>
+                <p style="margin: 10px 0; color: #856404;">
+                    A scraper was stopped at <strong>${stoppedScraper.progress_percentage}%</strong> complete
+                    (${stoppedScraper.processed_count}/${stoppedScraper.total_eo_count} EOs processed).
+                </p>
+                <p style="margin: 10px 0; color: #856404;">
+                    You can resume ${resumeInfo}.
+                </p>
+                <button
+                    onclick="resumeScraper(${stoppedScraper.id})"
+                    class="btn btn-warning"
+                    style="background: #ffc107; color: #000; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                    ▶️ Resume Scraper
+                </button>
+            </div>
+        `;
+        resumeContainer.style.display = 'block';
+    }
+}
+
+// Hide resume button
+function hideResumeButton() {
+    const resumeContainer = document.getElementById('resume-scraper-container');
+    if (resumeContainer) {
+        resumeContainer.style.display = 'none';
+    }
+}
+
+// Resume a stopped scraper
+async function resumeScraper(scraperRunId) {
+    if (!confirm('Are you sure you want to resume this scraper?\n\nIt will continue from where it was stopped.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('{% url "admin:resume_scraper_api" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ scraper_run_id: scraperRunId })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            alert(`Scraper resumed successfully!\n\n${data.message}`);
+            // Redirect to progress page
+            window.location.href = data.progress_url;
+        } else {
+            alert(`Failed to resume scraper:\n${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error resuming scraper:', error);
+        alert(`Error resuming scraper: ${error.message}`);
+    }
+}
+
+// Helper to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Check immediately
+    checkActiveScrapers();
+
+    // Check every 5 seconds
+    checkInterval = setInterval(checkActiveScrapers, 5000);
+});
+
+// Clean up interval on page unload
+window.addEventListener('beforeunload', function() {
+    if (checkInterval) {
+        clearInterval(checkInterval);
+    }
+});
 </script>
 {% endblock %}

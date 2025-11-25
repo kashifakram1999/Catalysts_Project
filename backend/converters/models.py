@@ -229,3 +229,136 @@ class BlogPost(models.Model):
             return normalized
         truncated = normalized[:length].rsplit(' ', 1)[0]
         return truncated.strip() + '...'
+
+
+class ScraperRun(models.Model):
+    """Track EO scraper runs for stop/resume functionality"""
+
+    STATUS_CHOICES = [
+        ('running', 'Running'),
+        ('stopped', 'Stopped'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    SCRAPER_TYPE_CHOICES = [
+        ('single', 'Single Worker'),
+        ('parallel', 'Parallel Workers'),
+    ]
+
+    # Run identification
+    task_id = models.CharField(max_length=255, unique=True, db_index=True)
+    scraper_type = models.CharField(max_length=20, choices=SCRAPER_TYPE_CHOICES, default='single')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running', db_index=True)
+
+    # Configuration
+    headless = models.BooleanField(default=True)
+    pages_per_eo = models.IntegerField(default=999, help_text="Maximum pages to scrape per EO (999 = process all pages)")
+    test_mode = models.BooleanField(default=False)
+    num_workers = models.IntegerField(default=1, help_text="Number of parallel workers (for parallel scraper)")
+
+    # Current position tracking (for page-level resume)
+    current_eo_number = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="Currently processing EO number"
+    )
+    current_page_number = models.IntegerField(
+        default=1,
+        help_text="Current page number being scraped within the EO"
+    )
+
+    # EO numbers to process
+    eo_numbers_to_process = models.JSONField(
+        default=list,
+        help_text="List of EO numbers to scrape"
+    )
+
+    # Progress tracking
+    eo_numbers_processed = models.JSONField(
+        default=list,
+        help_text="List of EO numbers that have been processed"
+    )
+    eo_numbers_failed = models.JSONField(
+        default=list,
+        help_text="List of EO numbers that failed"
+    )
+
+    # Statistics
+    total_eo_count = models.IntegerField(default=0)
+    processed_count = models.IntegerField(default=0)
+    success_count = models.IntegerField(default=0)
+    failed_count = models.IntegerField(default=0)
+    no_results_count = models.IntegerField(default=0)
+    partial_count = models.IntegerField(default=0)
+
+    # Worker info (for parallel scraping)
+    worker_task_ids = models.JSONField(
+        default=list,
+        help_text="List of worker task IDs for parallel scraping"
+    )
+
+    # Timestamps
+    started_at = models.DateTimeField(auto_now_add=True)
+    stopped_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Stop flag
+    stop_requested = models.BooleanField(default=False, db_index=True)
+
+    # Error info
+    error_message = models.TextField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Scraper Run"
+        verbose_name_plural = "Scraper Runs"
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(fields=['task_id']),
+            models.Index(fields=['status']),
+            models.Index(fields=['stop_requested']),
+            models.Index(fields=['started_at']),
+        ]
+
+    def __str__(self):
+        return f"Scraper Run {self.task_id[:8]} - {self.status} ({self.processed_count}/{self.total_eo_count})"
+
+    @property
+    def progress_percentage(self):
+        """Calculate progress percentage"""
+        if self.total_eo_count == 0:
+            return 0
+        return int((self.processed_count / self.total_eo_count) * 100)
+
+    @property
+    def remaining_eo_numbers(self):
+        """Get list of EO numbers that still need to be processed"""
+        processed_set = set(self.eo_numbers_processed)
+        return [eo for eo in self.eo_numbers_to_process if eo not in processed_set]
+
+    def mark_stopped(self):
+        """Mark this run as stopped"""
+        self.status = 'stopped'
+        self.stopped_at = timezone.now()
+        self.save(update_fields=['status', 'stopped_at', 'updated_at'])
+
+    def mark_completed(self):
+        """Mark this run as completed"""
+        self.status = 'completed'
+        self.completed_at = timezone.now()
+        self.save(update_fields=['status', 'completed_at', 'updated_at'])
+
+    def mark_failed(self, error_message=None):
+        """Mark this run as failed"""
+        self.status = 'failed'
+        self.completed_at = timezone.now()
+        if error_message:
+            self.error_message = error_message
+        self.save(update_fields=['status', 'completed_at', 'error_message', 'updated_at'])
+
+    def request_stop(self):
+        """Request this scraper run to stop"""
+        self.stop_requested = True
+        self.save(update_fields=['stop_requested', 'updated_at'])

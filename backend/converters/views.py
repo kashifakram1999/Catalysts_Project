@@ -243,6 +243,7 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
             return self.filter_queryset_by_params(base_queryset, params)
 
         makes_qs = filtered_queryset(exclude_keys=['make'])
+        model_qs = filtered_queryset(exclude_keys=['model'])
         vehicle_class_qs = filtered_queryset(exclude_keys=['vehicle_class'])
         manufacturer_qs = filtered_queryset(exclude_keys=['manufacturer'])
         executive_order_qs = filtered_queryset(exclude_keys=['executive_order'])
@@ -273,6 +274,9 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
             'makes': list(makes_qs.filter(
                 make__isnull=False
             ).exclude(make='').values_list('make', flat=True).distinct().order_by('make')),
+            'models': list(model_qs.filter(
+                model__isnull=False
+            ).exclude(model='').values_list('model', flat=True).distinct().order_by('model')),
             'vehicle_classes': list(vehicle_class_qs.filter(
                 vehicle_class__isnull=False
             ).exclude(vehicle_class='').values_list('vehicle_class', flat=True).distinct().order_by('vehicle_class')),

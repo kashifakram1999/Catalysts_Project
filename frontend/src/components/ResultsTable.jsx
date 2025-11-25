@@ -58,22 +58,28 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
             <thead className="bg-primary-50 dark:bg-primary-900">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
-                  EO Number
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
                   Manufacturer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
-                  Series/Model
+                  Location
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
-                  Vehicle
+                  Type
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
+                  Quantity
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
+                  Application
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
-                  Model Year
+                  Group
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider whitespace-nowrap">
+                  Cert. Level
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
-                  Class
+                  EO
                 </th>
               </tr>
             </thead>
@@ -84,6 +90,39 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
                   onClick={() => handleRowClick(converter)}
                   className="hover:bg-primary-50 dark:hover:bg-primary-700 cursor-pointer transition-colors"
                 >
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
+                      {converter.manufacturer_name || 'N/A'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-primary-900 dark:text-primary-100">
+                      {converter.converter_location || '-'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-primary-900 dark:text-primary-100">
+                      {converter.converter_type || '-'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-primary-900 dark:text-primary-100 text-center">
+                    {converter.quantity || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-primary-900 dark:text-primary-100">
+                      {converter.application_type || '-'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-primary-900 dark:text-primary-100 font-mono">
+                      {converter.test_group || '-'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-primary-900 dark:text-primary-100">
+                      {converter.cert_level || '-'}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {converter.eo_document_url ? (
                       <a
@@ -101,29 +140,6 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
-                      {converter.manufacturer_name || 'N/A'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-primary-900 dark:text-primary-100 font-mono">
-                      {converter.series_model || '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-primary-900 dark:text-primary-100">
-                      {converter.make || '-'} {converter.model || ''}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-primary-900 dark:text-primary-100">
-                    {converter.year_range}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-primary-900 dark:text-primary-100">
-                      {converter.vehicle_class || 'N/A'}
-                    </span>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -139,41 +155,62 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
               className="bg-primary-50 dark:bg-primary-700 rounded-lg p-4 space-y-2 cursor-pointer hover:shadow-md transition-shadow"
             >
               <div className="flex justify-between items-start">
+                <div className="font-medium text-primary-900 dark:text-primary-100">
+                  {converter.manufacturer_name || 'N/A'}
+                </div>
                 {converter.eo_document_url ? (
                   <a
                     href={converter.eo_document_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold hover:text-accent-700 dark:hover:text-accent-300 underline"
+                    className="font-mono text-xs text-accent-600 dark:text-accent-400 font-semibold hover:text-accent-700 dark:hover:text-accent-300 underline"
                   >
                     {converter.executive_order}
                   </a>
                 ) : (
-                  <span className="font-mono text-sm text-accent-600 dark:text-accent-400 font-semibold">
+                  <span className="font-mono text-xs text-accent-600 dark:text-accent-400 font-semibold">
                     {converter.executive_order}
                   </span>
                 )}
-                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-accent-100 dark:bg-accent-900 text-accent-800 dark:text-accent-200">
-                  {converter.vehicle_class || 'N/A'}
-                </span>
               </div>
-              <div>
-                <div className="font-medium text-primary-900 dark:text-primary-100">
-                  {converter.manufacturer_name || 'N/A'}
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Location:</span>
+                  <span className="ml-1 text-primary-900 dark:text-primary-100">
+                    {converter.converter_location || '-'}
+                  </span>
                 </div>
-                <div className="text-sm text-primary-500 dark:text-primary-400 font-mono">
-                  {converter.series_model || '-'}
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Type:</span>
+                  <span className="ml-1 text-primary-900 dark:text-primary-100">
+                    {converter.converter_type || '-'}
+                  </span>
                 </div>
-              </div>
-              <div className="text-sm">
-                <span className="text-primary-900 dark:text-primary-100">
-                  {converter.make || '-'} {converter.model || ''}
-                </span>
-                {' • '}
-                <span className="text-primary-600 dark:text-primary-400">
-                  {converter.year_range}
-                </span>
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Quantity:</span>
+                  <span className="ml-1 align-item-center text-primary-900 dark:text-primary-100">
+                    {converter.quantity || '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Application:</span>
+                  <span className="ml-1 text-primary-900 dark:text-primary-100">
+                    {converter.application_type || '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Group:</span>
+                  <span className="ml-1 text-primary-900 dark:text-primary-100 font-mono text-xs">
+                    {converter.test_group || '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Cert Level:</span>
+                  <span className="ml-1 text-primary-900 dark:text-primary-100">
+                    {converter.cert_level || '-'}
+                  </span>
+                </div>
               </div>
             </div>
           ))}

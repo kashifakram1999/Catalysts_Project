@@ -39,6 +39,12 @@ class CatalyticConverterListSerializer(serializers.ModelSerializer):
             'model_year_end',
             'vehicle_class',
             'eo_date',
+            'converter_location',
+            'converter_type',
+            'quantity',
+            'application_type',
+            'test_group',
+            'cert_level',
         ]
 
 
@@ -65,6 +71,12 @@ class CatalyticConverterDetailSerializer(serializers.ModelSerializer):
             'model_year_end',
             'vehicle_class',
             'eo_date',
+            'converter_location',
+            'converter_type',
+            'quantity',
+            'application_type',
+            'test_group',
+            'cert_level',
         ]
 
 

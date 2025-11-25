@@ -50,6 +50,11 @@
         color: white;
     }
 
+    .status-stopped {
+        background: #fd7e14;
+        color: white;
+    }
+
     @keyframes pulse {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.7; }
@@ -295,6 +300,48 @@
         padding-bottom: 10px;
         border-bottom: 2px solid #417690;
     }
+
+    .btn {
+        display: inline-block;
+        padding: 10px 20px;
+        margin: 0 5px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .btn-primary {
+        background: #417690;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #2e5266;
+    }
+
+    .btn-danger {
+        background: #dc3545;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background: #c82333;
+    }
+
+    .btn-danger:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    .actions {
+        margin-top: 20px;
+        text-align: center;
+    }
 </style>
 {% endblock %}
 
@@ -350,6 +397,8 @@
     </div>
 
     <div class="actions" id="actions" style="display: none;">
+        <button class="btn btn-danger" id="stop-button" onclick="stopScraper()">Stop Scraper</button>
+        <button class="btn btn-warning" id="resume-button" onclick="resumeScraper()" style="display: none; background: #ffc107; color: #000;">▶️ Resume Scraper</button>
         <a href="{% url 'admin:scraper_dashboard' %}" class="btn btn-primary">Back to Dashboard</a>
     </div>
 </div>
@@ -358,8 +407,10 @@
 const taskId = "{{ task_id }}";
 const scraperType = "{{ scraper_type }}";
 const progressApiUrl = "{% url 'admin:scraper_progress_api' %}";
+const stopApiUrl = "{% url 'admin:stop_scraper_api' %}";
 let pollInterval;
 let lastOutputLength = 0;
+let scraperRunId = null;
 
 function updateProgress() {
     fetch(`${progressApiUrl}?task_id=${taskId}&type=${scraperType}`)
@@ -372,21 +423,44 @@ function updateProgress() {
             const workersContainer = document.getElementById('workers-container');
             const workersGrid = document.getElementById('workers-grid');
 
+            // Store scraper_run_id if available
+            if (data.scraper_run_id) {
+                scraperRunId = data.scraper_run_id;
+            }
+
             // Update status badge
             statusBadge.className = 'status-badge status-' + data.status;
+            const stopButton = document.getElementById('stop-button');
+            const resumeButton = document.getElementById('resume-button');
+
             if (data.status === 'running') {
                 statusBadge.textContent = 'Running...';
                 spinner.style.display = 'inline-block';
+                actionsDiv.style.display = 'block';
+                stopButton.style.display = 'inline-block';
+                stopButton.disabled = false;
+                if (resumeButton) resumeButton.style.display = 'none';
+            } else if (data.status === 'stopped') {
+                statusBadge.textContent = 'Stopped';
+                spinner.style.display = 'none';
+                clearInterval(pollInterval);
+                actionsDiv.style.display = 'block';
+                stopButton.style.display = 'none';
+                if (resumeButton) resumeButton.style.display = 'inline-block';
             } else if (data.status === 'completed') {
                 statusBadge.textContent = 'Completed';
                 spinner.style.display = 'none';
                 clearInterval(pollInterval);
                 actionsDiv.style.display = 'block';
+                stopButton.style.display = 'none';
+                if (resumeButton) resumeButton.style.display = 'none';
             } else if (data.status === 'error') {
                 statusBadge.textContent = 'Error';
                 spinner.style.display = 'none';
                 clearInterval(pollInterval);
                 actionsDiv.style.display = 'block';
+                stopButton.style.display = 'none';
+                if (resumeButton) resumeButton.style.display = 'none';
             }
 
             // Update output
@@ -517,6 +591,114 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Stop scraper function
+async function stopScraper() {
+    if (!scraperRunId) {
+        alert('Cannot stop scraper: scraper run ID not available');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to stop the scraper?\n\nIt will stop gracefully after completing the current EO number.')) {
+        return;
+    }
+
+    const stopButton = document.getElementById('stop-button');
+    stopButton.disabled = true;
+    stopButton.textContent = 'Stopping...';
+
+    try {
+        const response = await fetch(stopApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                scraper_run_id: scraperRunId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            alert(data.message);
+            stopButton.textContent = 'Stop Requested';
+            // Continue polling to show when it actually stops
+        } else {
+            alert('Error stopping scraper: ' + (data.error || 'Unknown error'));
+            stopButton.disabled = false;
+            stopButton.textContent = 'Stop Scraper';
+        }
+    } catch (error) {
+        console.error('Error stopping scraper:', error);
+        alert('Error stopping scraper: ' + error.message);
+        stopButton.disabled = false;
+        stopButton.textContent = 'Stop Scraper';
+    }
+}
+
+// Resume scraper function
+async function resumeScraper() {
+    if (!scraperRunId) {
+        alert('Cannot resume scraper: scraper run ID not available');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to resume this scraper?\n\nIt will continue from where it was stopped.')) {
+        return;
+    }
+
+    const resumeButton = document.getElementById('resume-button');
+    resumeButton.disabled = true;
+    resumeButton.textContent = 'Resuming...';
+
+    try {
+        const response = await fetch('{% url "admin:resume_scraper_api" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                scraper_run_id: scraperRunId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            alert(`Scraper resumed successfully!\n\n${data.message}`);
+            // Redirect to progress page for the new task
+            window.location.href = data.progress_url;
+        } else {
+            alert('Error resuming scraper: ' + (data.error || 'Unknown error'));
+            resumeButton.disabled = false;
+            resumeButton.textContent = '▶️ Resume Scraper';
+        }
+    } catch (error) {
+        console.error('Error resuming scraper:', error);
+        alert('Error resuming scraper: ' + error.message);
+        resumeButton.disabled = false;
+        resumeButton.textContent = '▶️ Resume Scraper';
+    }
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
 }
 
 // Start polling every 2 seconds
