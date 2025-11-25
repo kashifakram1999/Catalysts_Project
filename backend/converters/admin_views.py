@@ -129,6 +129,18 @@ def run_website_scraper(request):
     Trigger website scraping operation using Celery and EO-based scraper
     """
     if request.method == 'POST':
+        # Check for concurrent scrapers
+        from .models import ScraperRun
+        active_scrapers = ScraperRun.objects.filter(status='running').exists()
+
+        if active_scrapers:
+            messages.error(
+                request,
+                'Cannot start scraper: Another scraper is already running. '
+                'Please wait for it to complete or stop it first.'
+            )
+            return redirect('admin:scraper_dashboard')
+
         headless = request.POST.get('headless') == 'true'
         pages = request.POST.get('pages', '').strip()  # Empty by default (scrape all pages)
         test_mode = request.POST.get('test_mode', 'false') == 'true'
@@ -232,11 +244,21 @@ def scraper_progress_api(request):
     """
     API endpoint to get current scraping progress from Celery task
     """
+    from .models import ScraperRun
+
     task_id = request.GET.get('task_id')
     scraper_type = request.GET.get('type', 'unknown')
 
     if not task_id:
         return JsonResponse({'error': 'No task_id provided'}, status=400)
+
+    # Try to get scraper_run_id from database
+    scraper_run_id = None
+    try:
+        scraper_run = ScraperRun.objects.get(task_id=task_id)
+        scraper_run_id = scraper_run.id
+    except ScraperRun.DoesNotExist:
+        pass
 
     try:
         # Check if this is a parallel scraping task
@@ -262,6 +284,7 @@ def scraper_progress_api(request):
                         f'(Looking for cache key: {cache_key})'
                     ],
                     'error': None,
+                    'scraper_run_id': scraper_run_id,
                 })
 
             if cached_data and 'chord_id' in cached_data:
@@ -280,7 +303,25 @@ def scraper_progress_api(request):
                             f"Total EOs: {cached_data.get('total_eos', 'Unknown')}",
                         ],
                         'error': None,
+                        'scraper_run_id': scraper_run_id,
                     })
+
+                # Check if scraper_run status overrides task state (for stopped/completed)
+                if scraper_run_id:
+                    try:
+                        scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                        if scraper_run.status in ['stopped', 'completed', 'failed']:
+                            # ScraperRun status takes precedence
+                            return JsonResponse({
+                                'status': scraper_run.status,
+                                'task_id': task_id,
+                                'scraper_run_id': scraper_run_id,
+                                'output': [f'Scraper {scraper_run.status}'],
+                                'error': scraper_run.error_message if scraper_run.status == 'failed' else None,
+                                'workers': [],  # Empty workers for stopped state
+                            })
+                    except ScraperRun.DoesNotExist:
+                        pass
 
                 # Get the chord callback task
                 chord_result = AsyncResult(chord_id)
@@ -336,6 +377,7 @@ def scraper_progress_api(request):
                         'message': 'Parallel scraping completed successfully',
                         'workers': [],  # Workers are done, no need to show progress
                         'error': None,
+                        'scraper_run_id': scraper_run_id,
                     })
                 else:
                     # Workers still running - fetch individual worker progress
@@ -460,15 +502,33 @@ def scraper_progress_api(request):
                         'current_status': 'Workers processing data in parallel',
                         'workers': workers_progress,
                         'error': None,
+                        'scraper_run_id': scraper_run_id,
                     })
 
         # Regular task monitoring (non-parallel)
         task_result = AsyncResult(task_id)
 
+        # Check if scraper_run status overrides task state (for stopped/completed)
+        if scraper_run_id:
+            try:
+                scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+                if scraper_run.status in ['stopped', 'completed', 'failed']:
+                    # ScraperRun status takes precedence
+                    return JsonResponse({
+                        'status': scraper_run.status,
+                        'task_id': task_id,
+                        'scraper_run_id': scraper_run_id,
+                        'output': [f'Scraper {scraper_run.status}'],
+                        'error': scraper_run.error_message if scraper_run.status == 'failed' else None,
+                    })
+            except ScraperRun.DoesNotExist:
+                pass
+
         # Build response based on task state
         response = {
             'status': task_result.state,
             'task_id': task_id,
+            'scraper_run_id': scraper_run_id,
         }
 
         if task_result.state == 'PENDING':
@@ -530,6 +590,18 @@ def run_parallel_scraper(request):
     Trigger parallel website scraping operation with multiple workers
     """
     if request.method == 'POST':
+        # Check for concurrent scrapers
+        from .models import ScraperRun
+        active_scrapers = ScraperRun.objects.filter(status='running').exists()
+
+        if active_scrapers:
+            messages.error(
+                request,
+                'Cannot start scraper: Another scraper is already running. '
+                'Please wait for it to complete or stop it first.'
+            )
+            return redirect('admin:scraper_dashboard')
+
         num_workers = request.POST.get('num_workers', '4')
         headless = request.POST.get('headless') == 'true'
         pages = request.POST.get('pages', '').strip()
@@ -614,3 +686,189 @@ def run_parallel_scraper(request):
         return redirect('admin:scraper_dashboard')
 
     return redirect('admin:scraper_dashboard')
+
+
+@staff_member_required
+def check_active_scrapers_api(request):
+    """
+    API endpoint to check if there are any active or stopped scraper runs
+    Returns list of active scrapers and most recent stopped scraper
+    """
+    from .models import ScraperRun
+
+    try:
+        # Get all running scrapers
+        active_scrapers = ScraperRun.objects.filter(status='running').order_by('-started_at')
+
+        scrapers_data = []
+        for scraper in active_scrapers:
+            scrapers_data.append({
+                'id': scraper.id,
+                'task_id': scraper.task_id,
+                'scraper_type': scraper.scraper_type,
+                'status': scraper.status,
+                'progress_percentage': scraper.progress_percentage,
+                'processed_count': scraper.processed_count,
+                'total_eo_count': scraper.total_eo_count,
+                'started_at': scraper.started_at.isoformat(),
+            })
+
+        # Get most recent stopped scraper
+        stopped_scraper = ScraperRun.objects.filter(status='stopped').order_by('-stopped_at').first()
+        stopped_data = None
+        if stopped_scraper:
+            remaining = len(stopped_scraper.remaining_eo_numbers)
+            current_eo = stopped_scraper.current_eo_number
+            current_page = stopped_scraper.current_page_number
+            stopped_data = {
+                'id': stopped_scraper.id,
+                'task_id': stopped_scraper.task_id,
+                'scraper_type': stopped_scraper.scraper_type,
+                'progress_percentage': stopped_scraper.progress_percentage,
+                'processed_count': stopped_scraper.processed_count,
+                'total_eo_count': stopped_scraper.total_eo_count,
+                'remaining_count': remaining,
+                'current_eo': current_eo,
+                'current_page': current_page,
+                'stopped_at': stopped_scraper.stopped_at.isoformat() if stopped_scraper.stopped_at else None,
+            }
+
+        return JsonResponse({
+            'active_scrapers': scrapers_data,
+            'has_active': len(scrapers_data) > 0,
+            'stopped_scraper': stopped_data,
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@staff_member_required
+def stop_scraper_api(request):
+    """
+    API endpoint to request a scraper to stop gracefully
+    """
+    from .models import ScraperRun
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=400)
+
+    import json
+    try:
+        data = json.loads(request.body)
+        scraper_run_id = data.get('scraper_run_id')
+
+        if not scraper_run_id:
+            return JsonResponse({'error': 'scraper_run_id is required'}, status=400)
+
+        try:
+            scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+
+            if scraper_run.status != 'running':
+                return JsonResponse({
+                    'error': f'Scraper is not running (current status: {scraper_run.status})'
+                }, status=400)
+
+            # Request stop
+            scraper_run.request_stop()
+
+            return JsonResponse({
+                'success': True,
+                'message': 'Stop requested. The scraper will stop gracefully after completing the current EO.',
+                'scraper_run_id': scraper_run.id,
+            })
+
+        except ScraperRun.DoesNotExist:
+            return JsonResponse({'error': f'ScraperRun {scraper_run_id} not found'}, status=404)
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@staff_member_required
+def resume_scraper_api(request):
+    """
+    API endpoint to resume a stopped scraper from where it left off
+    """
+    from .models import ScraperRun
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=400)
+
+    import json
+    try:
+        data = json.loads(request.body)
+        scraper_run_id = data.get('scraper_run_id')
+
+        if not scraper_run_id:
+            return JsonResponse({'error': 'scraper_run_id is required'}, status=400)
+
+        try:
+            scraper_run = ScraperRun.objects.get(id=scraper_run_id)
+
+            if scraper_run.status != 'stopped':
+                return JsonResponse({
+                    'error': f'Scraper is not in stopped state (current status: {scraper_run.status})'
+                }, status=400)
+
+            # Check if there's work to be done
+            remaining_eos = scraper_run.remaining_eo_numbers
+            current_eo = scraper_run.current_eo_number
+            current_page = scraper_run.current_page_number
+
+            if not remaining_eos and not (current_eo and current_page):
+                return JsonResponse({
+                    'error': 'No remaining work to resume'
+                }, status=400)
+
+            # Launch appropriate task based on scraper type
+            # Use the ORIGINAL eo_numbers_to_process list, scraper will handle resume logic
+            original_eo_list = scraper_run.eo_numbers_to_process
+
+            if scraper_run.scraper_type == 'parallel':
+                task = parallel_scrape_website.delay(
+                    num_workers=scraper_run.num_workers,
+                    headless=scraper_run.headless,
+                    pages=scraper_run.pages_per_eo,
+                    test_mode=scraper_run.test_mode,
+                    eo_numbers=','.join(original_eo_list),
+                )
+            else:
+                task = scrape_website_task.delay(
+                    headless=scraper_run.headless,
+                    pages=scraper_run.pages_per_eo,
+                    test_mode=scraper_run.test_mode,
+                    eo_numbers=','.join(original_eo_list),
+                )
+
+            # Update scraper run with new task ID and reset stop flags
+            # Keep the original eo_numbers_to_process, current_eo_number, and current_page_number
+            # The scraper will use these to resume from the correct position
+            scraper_run.task_id = task.id
+            scraper_run.status = 'running'
+            scraper_run.stop_requested = False
+            scraper_run.stopped_at = None
+            scraper_run.save(update_fields=['task_id', 'status', 'stop_requested', 'stopped_at', 'updated_at'])
+
+            progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type={scraper_run.scraper_type}"
+
+            resume_info = f"Resuming from EO {current_eo}, page {current_page}" if current_eo and current_page else f"Resuming with {len(remaining_eos)} remaining EO numbers"
+
+            return JsonResponse({
+                'success': True,
+                'message': resume_info,
+                'task_id': task.id,
+                'scraper_run_id': scraper_run.id,
+                'progress_url': progress_url,
+            })
+
+        except ScraperRun.DoesNotExist:
+            return JsonResponse({'error': f'ScraperRun {scraper_run_id} not found'}, status=404)
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        import traceback
+        return JsonResponse({'error': str(e), 'traceback': traceback.format_exc()}, status=500)

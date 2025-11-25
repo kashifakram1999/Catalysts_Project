@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import SearchForm from '../components/SearchForm';
 import ResultsTable from '../components/ResultsTable';
-import BlogPreview from '../components/BlogPreview';
 import { convertersAPI } from '../services/api';
 
 export default function Home() {
@@ -81,10 +80,6 @@ export default function Home() {
             />
           </div>
         )}
-
-        <div className={searched ? 'order-3' : 'order-2'}>
-          <BlogPreview />
-        </div>
       </div>
     </div>
   );

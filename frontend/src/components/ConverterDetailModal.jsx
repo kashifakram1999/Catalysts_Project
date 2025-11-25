@@ -68,6 +68,18 @@ export default function ConverterDetailModal({ converter, isOpen, onClose }) {
                     <DetailRow label="Series/Model" value={converter.series_model} />
 
                     <div className="py-3 border-b border-primary-200 dark:border-primary-700">
+                      <dt className="text-sm font-medium text-primary-500 dark:text-primary-400 mb-2">Converter Specifications</dt>
+                      <dd className="text-sm text-primary-900 dark:text-primary-100 space-y-1">
+                        <div><span className="font-medium">Location:</span> {converter.converter_location || 'N/A'}</div>
+                        <div><span className="font-medium">Type:</span> {converter.converter_type || 'N/A'}</div>
+                        <div><span className="font-medium">Quantity:</span> {converter.quantity || 'N/A'}</div>
+                        <div><span className="font-medium">Application:</span> {converter.application_type || 'N/A'}</div>
+                        <div><span className="font-medium">Test Group:</span> {converter.test_group || 'N/A'}</div>
+                        <div><span className="font-medium">Certification Level:</span> {converter.cert_level || 'N/A'}</div>
+                      </dd>
+                    </div>
+
+                    <div className="py-3 border-b border-primary-200 dark:border-primary-700">
                       <dt className="text-sm font-medium text-primary-500 dark:text-primary-400 mb-2">Vehicle Information</dt>
                       <dd className="text-sm text-primary-900 dark:text-primary-100 space-y-1">
                         <div><span className="font-medium">Make:</span> {converter.make || 'N/A'}</div>

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.admin import AdminSite
 from django.urls import path
 from django.utils.html import format_html
-from .models import Manufacturer, CatalyticConverter, BlogPost
+from .models import Manufacturer, CatalyticConverter, BlogPost, ScraperRun
 from . import admin_views
 
 
@@ -46,6 +46,15 @@ class CARBAdminSite(AdminSite):
             path('scraper-dashboard/progress/api/',
                  self.admin_view(admin_views.scraper_progress_api),
                  name='scraper_progress_api'),
+            path('scraper-dashboard/api/check-active/',
+                 self.admin_view(admin_views.check_active_scrapers_api),
+                 name='check_active_scrapers_api'),
+            path('scraper-dashboard/api/stop/',
+                 self.admin_view(admin_views.stop_scraper_api),
+                 name='stop_scraper_api'),
+            path('scraper-dashboard/api/resume/',
+                 self.admin_view(admin_views.resume_scraper_api),
+                 name='resume_scraper_api'),
         ]
         return custom_urls + urls
 
@@ -78,6 +87,7 @@ class CatalyticConverterAdmin(admin.ModelAdmin):
         'is_active',
         'engine_size',
         'converter_type',
+        'quantity'
         
     ]
     list_filter = [
@@ -150,3 +160,39 @@ class BlogPostAdmin(admin.ModelAdmin):
     ordering = ['-published_at']
     prepopulated_fields = {'slug': ('title',)}
     readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(ScraperRun, site=admin_site)
+class ScraperRunAdmin(admin.ModelAdmin):
+    list_display = ['task_id', 'scraper_type', 'status', 'progress_percentage', 'processed_count', 'total_eo_count', 'started_at']
+    list_filter = ['status', 'scraper_type', 'started_at']
+    search_fields = ['task_id']
+    ordering = ['-started_at']
+    readonly_fields = ['task_id', 'started_at', 'stopped_at', 'completed_at', 'updated_at', 'progress_percentage', 'remaining_eo_numbers']
+
+    fieldsets = (
+        ('Run Information', {
+            'fields': ('task_id', 'scraper_type', 'status', 'stop_requested')
+        }),
+        ('Configuration', {
+            'fields': ('headless', 'pages_per_eo', 'test_mode', 'num_workers')
+        }),
+        ('Progress', {
+            'fields': ('progress_percentage', 'processed_count', 'total_eo_count', 'success_count', 'failed_count', 'no_results_count', 'partial_count')
+        }),
+        ('EO Numbers', {
+            'fields': ('eo_numbers_to_process', 'eo_numbers_processed', 'eo_numbers_failed', 'remaining_eo_numbers'),
+            'classes': ('collapse',)
+        }),
+        ('Workers', {
+            'fields': ('worker_task_ids',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('started_at', 'stopped_at', 'completed_at', 'updated_at')
+        }),
+        ('Error Info', {
+            'fields': ('error_message',),
+            'classes': ('collapse',)
+        }),
+    )

@@ -223,9 +223,54 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
     Returns:
         dict: Scraping statistics
     """
+    from converters.models import ScraperRun
+    from converters.eo_scraper import CARBEOScraper
+
     logger.info(f"Starting website scraping task {self.request.id}")
 
+    scraper_run = None
+    scraper = None
+
     try:
+        # Parse EO numbers for ScraperRun
+        eo_numbers_list = []
+        if eo_numbers and eo_numbers.strip():
+            eo_numbers_list = [eo.strip() for eo in eo_numbers.split(',') if eo.strip()]
+        else:
+            # We'll extract them from the website
+            try:
+                scraper = CARBEOScraper(headless=True)
+                scraper._setup_driver()
+                eo_numbers_list = scraper.extract_eo_numbers()
+                scraper._close_driver()
+                scraper = None
+            except Exception as e:
+                logger.warning(f"Could not extract EO numbers for ScraperRun: {e}")
+                eo_numbers_list = []
+
+        if test_mode and eo_numbers_list:
+            eo_numbers_list = eo_numbers_list[:3]
+
+        # Check if we're resuming an existing ScraperRun
+        # (resume API updates task_id before starting the new task)
+        scraper_run = ScraperRun.objects.filter(task_id=self.request.id).first()
+
+        if scraper_run:
+            # Resuming existing scraper run
+            logger.info(f"Resuming existing ScraperRun {scraper_run.id} for task {self.request.id}")
+        else:
+            # Create new ScraperRun record
+            scraper_run = ScraperRun.objects.create(
+                task_id=self.request.id,
+                scraper_type='single',
+                headless=headless,
+                pages_per_eo=pages or 999,
+                test_mode=test_mode,
+                eo_numbers_to_process=eo_numbers_list,
+                total_eo_count=len(eo_numbers_list),
+            )
+            logger.info(f"Created new ScraperRun {scraper_run.id} for task {self.request.id}")
+
         # Update task state
         self.update_state(
             state='PROGRESS',
@@ -354,6 +399,10 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
         # Mark as completed
         logger.info(f"Website scraping task {self.request.id} completed successfully")
 
+        # Mark ScraperRun as completed
+        if scraper_run:
+            scraper_run.mark_completed()
+
         return {
             'status': 'completed',
             'output': output_lines,
@@ -363,6 +412,11 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
 
     except Exception as e:
         logger.error(f"Website scraping task {self.request.id} failed: {str(e)}")
+
+        # Mark ScraperRun as failed
+        if scraper_run:
+            scraper_run.mark_failed(str(e))
+
         self.update_state(
             state='FAILURE',
             meta={
@@ -408,7 +462,7 @@ def cleanup_old_task_results():
     soft_time_limit=20 * 60 * 60,  # 20 hours per batch
     time_limit=(20 * 60 * 60) + 300,
 )
-def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, pages=50):
+def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, pages=50, parent_task_id=None):
     """
     Scrape a specific batch of EO numbers
 
@@ -418,13 +472,25 @@ def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, 
         total_batches (int): Total number of batches
         headless (bool): Run browser in headless mode
         pages (int): Maximum pages to scrape per EO
+        parent_task_id (str): Parent task ID for looking up ScraperRun
 
     Returns:
         dict: Scraping statistics for this batch
     """
     from converters.eo_scraper import CARBEOScraper
+    from converters.models import ScraperRun
 
     logger.info(f"Starting batch {batch_number}/{total_batches} with {len(eo_batch)} EO numbers")
+
+    # Look up ScraperRun by parent task ID
+    scraper_run_id = None
+    if parent_task_id:
+        try:
+            scraper_run = ScraperRun.objects.get(task_id=parent_task_id)
+            scraper_run_id = scraper_run.id
+            logger.info(f"Found ScraperRun {scraper_run_id} for parent task {parent_task_id}")
+        except ScraperRun.DoesNotExist:
+            logger.warning(f"No ScraperRun found for parent task {parent_task_id}")
 
     # Store logs for this worker
     worker_logs = []
@@ -518,7 +584,7 @@ def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, 
         scraper_logger.setLevel(logging.INFO)
 
         try:
-            stats = scraper.scrape_by_eo_numbers(eo_batch)
+            stats = scraper.scrape_by_eo_numbers(eo_batch, scraper_run_id=scraper_run_id)
         finally:
             # Remove the handler
             scraper_logger.removeHandler(worker_log_handler)
@@ -591,7 +657,23 @@ def aggregate_parallel_results(self, batch_results):
     Returns:
         dict: Aggregated statistics from all workers
     """
+    from converters.models import ScraperRun
+    from django.core.cache import cache
+
     logger.info(f"Aggregating results from {len(batch_results)} batches")
+
+    # Try to find the ScraperRun to mark as completed
+    scraper_run = None
+    try:
+        # Look through cache for parent task ID
+        # The cache key pattern is f'parallel_scrape_{parent_task_id}'
+        # We can't easily get the parent task ID here, so we'll find any running parallel ScraperRun
+        running_scrapers = ScraperRun.objects.filter(status='running', scraper_type='parallel').order_by('-started_at')
+        if running_scrapers.exists():
+            scraper_run = running_scrapers.first()
+            logger.info(f"Found running ScraperRun {scraper_run.id} to mark as completed")
+    except Exception as e:
+        logger.warning(f"Could not find ScraperRun to mark as completed: {e}")
 
     total_stats = {
         'total_eos': 0,
@@ -623,6 +705,11 @@ def aggregate_parallel_results(self, batch_results):
 
     logger.info(f"Parallel scraping complete. Total stats: {total_stats}")
 
+    # Mark ScraperRun as completed
+    if scraper_run:
+        scraper_run.mark_completed()
+        logger.info(f"Marked ScraperRun {scraper_run.id} as completed")
+
     return {
         'status': 'completed',
         'num_workers': len(batch_results),
@@ -653,9 +740,12 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
     """
     from celery import chord
     from converters.eo_scraper import CARBEOScraper
+    from converters.models import ScraperRun
     import math
 
     logger.info(f"Starting parallel scraping with {num_workers} workers")
+
+    scraper_run = None
 
     # Update initial state
     self.update_state(
@@ -702,6 +792,28 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
             # In test mode, use first 12 EO numbers (3 per worker with 4 workers)
             all_eo_numbers = all_eo_numbers[:12]
             logger.info(f"Test mode: Limited to {len(all_eo_numbers)} EO numbers")
+
+        # Check if we're resuming an existing ScraperRun
+        scraper_run = ScraperRun.objects.filter(task_id=self.request.id).first()
+
+        if scraper_run:
+            # Resuming existing scraper run
+            logger.info(f"Resuming existing parallel ScraperRun {scraper_run.id} for task {self.request.id}")
+            # Use the original EO list from the ScraperRun
+            all_eo_numbers = scraper_run.eo_numbers_to_process
+        else:
+            # Create new ScraperRun record
+            scraper_run = ScraperRun.objects.create(
+                task_id=self.request.id,
+                scraper_type='parallel',
+                headless=headless,
+                pages_per_eo=pages or 999,
+                test_mode=test_mode,
+                num_workers=num_workers,
+                eo_numbers_to_process=all_eo_numbers,
+                total_eo_count=len(all_eo_numbers),
+            )
+            logger.info(f"Created new parallel ScraperRun {scraper_run.id} for task {self.request.id}")
 
         # Update state
         self.update_state(
@@ -757,7 +869,8 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
                 batch_number=i + 1,
                 total_batches=len(batches),
                 headless=headless,
-                pages=pages
+                pages=pages,
+                parent_task_id=self.request.id
             )
             # Set the task ID on the signature's options
             task_signature.set(task_id=task_id)
@@ -812,6 +925,11 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
         logger.info(f"Parallel scraping launched with {len(batches)} workers. Chord callback ID: {chord_id}, Worker IDs: {len(worker_task_ids)} captured")
         logger.info(f"Cache stored at key: {cache_key} with {len(worker_task_ids)} worker IDs")
 
+        # Store the worker task IDs in ScraperRun for tracking
+        if scraper_run:
+            scraper_run.worker_task_ids = worker_task_ids
+            scraper_run.save(update_fields=['worker_task_ids', 'updated_at'])
+
         # Return the chord result ID so progress can be monitored
         return {
             'status': 'processing',
@@ -823,6 +941,11 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
 
     except Exception as e:
         logger.error(f"Parallel scraping failed: {e}")
+
+        # Mark ScraperRun as failed
+        if scraper_run:
+            scraper_run.mark_failed(str(e))
+
         if scraper:
             scraper._close_driver()
         raise

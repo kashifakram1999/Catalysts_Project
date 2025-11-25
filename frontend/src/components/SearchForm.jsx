@@ -8,7 +8,7 @@ const INITIAL_FORM_STATE = {
   series_model: '',
   year: '',
   make: '',
-  vehicle_class: '',
+  model: '',
   engine_size: '',
   test_group: '',
   converter_type: '',
@@ -27,7 +27,7 @@ export default function SearchForm({ onSearch, onReset }) {
   const [manufacturers, setManufacturers] = useState([]);
   const [makes, setMakes] = useState([]);
   const [years, setYears] = useState([]);
-  const [vehicleClasses, setVehicleClasses] = useState([]);
+  const [models, setModels] = useState([]);
   const [executiveOrders, setExecutiveOrders] = useState([]);
   const [seriesModels, setSeriesModels] = useState([]);
   const [engineSizes, setEngineSizes] = useState([]);
@@ -53,7 +53,7 @@ export default function SearchForm({ onSearch, onReset }) {
       };
 
       dropIfMissing('make', options.makes || []);
-      dropIfMissing('vehicle_class', options.vehicle_classes || []);
+      dropIfMissing('model', options.models || []);
       dropIfMissing('executive_order', options.executive_orders || []);
       dropIfMissing('series_model', options.series_models || []);
       dropIfMissing('engine_size', options.engine_sizes || []);
@@ -97,7 +97,7 @@ export default function SearchForm({ onSearch, onReset }) {
       setManufacturers(data.manufacturers || []);
       setMakes(data.makes || []);
       setYears(data.years || []);
-      setVehicleClasses(data.vehicle_classes || []);
+      setModels(data.models || []);
       setExecutiveOrders(data.executive_orders || []);
       setSeriesModels(data.series_models || []);
       setEngineSizes(data.engine_sizes || []);
@@ -185,7 +185,7 @@ export default function SearchForm({ onSearch, onReset }) {
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* First Search Row - Model Year, Vehicle, Class */}
+        {/* First Search Row - Model Year, Vehicle, Model */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Model Year */}
           <div>
@@ -225,21 +225,21 @@ export default function SearchForm({ onSearch, onReset }) {
             />
           </div>
 
-          {/* Class (Vehicle Class) */}
+          {/* Model */}
           <div>
-            <label htmlFor="vehicle_class" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-              Class
+            <label htmlFor="model" className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+              Model
             </label>
             <CustomSelect
-              id="vehicle_class"
-              name="vehicle_class"
-              value={formData.vehicle_class}
+              id="model"
+              name="model"
+              value={formData.model}
               onChange={handleChange}
               options={[
-                { value: '', label: 'All Classes' },
-                ...vehicleClasses.map(vc => ({ value: vc, label: vc }))
+                { value: '', label: 'All Models' },
+                ...models.map(m => ({ value: m, label: m }))
               ]}
-              placeholder="All Classes"
+              placeholder="All Models"
               searchable={true}
             />
           </div>
