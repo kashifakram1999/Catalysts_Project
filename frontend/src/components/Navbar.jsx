@@ -40,7 +40,7 @@ export default function Navbar() {
           <div className="flex items-center flex-none">
             <Link to="/" className="flex items-center" onClick={closeMobileMenu}>
               <span className="text-2xl font-bold text-accent-600 dark:text-accent-400">
-                CARB Catalysts
+                CARB Catalytic Converter
               </span>
             </Link>
           </div>

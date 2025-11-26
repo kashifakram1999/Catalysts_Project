@@ -10,7 +10,7 @@ export default function Footer() {
           {/* About Section */}
           <div className="md:col-span-2">
             <h3 className="text-2xl font-bold text-accent-600 dark:text-accent-400 mb-4">
-              CARB Catalysts
+              CARB Catalytic Converter
             </h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-md">
               Search and find California Air Resources Board (CARB) approved catalytic converters for your vehicle.
