@@ -97,6 +97,9 @@ export default function ResultsTable({ results, loading, onLoadMore, pagination,
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
                   Manufacturer
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider whitespace-nowrap">
+                  Part Numbers
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-primary-700 dark:text-primary-300 uppercase tracking-wider">
                   Location
                 </th>
@@ -130,6 +133,11 @@ export default function ResultsTable({ results, loading, onLoadMore, pagination,
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
                       {converter.manufacturer_name || 'N/A'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-primary-900 dark:text-primary-100">
+                      {converter.series_model || '-'}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -212,6 +220,12 @@ export default function ResultsTable({ results, loading, onLoadMore, pagination,
                 )}
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-primary-500 dark:text-primary-400">Part Numbers:</span>
+                  <span className="ml-1 text-primary-900 dark:text-primary-100">
+                    {converter.series_model || '-'}
+                  </span>
+                </div>
                 <div>
                   <span className="text-primary-500 dark:text-primary-400">Location:</span>
                   <span className="ml-1 text-primary-900 dark:text-primary-100">
