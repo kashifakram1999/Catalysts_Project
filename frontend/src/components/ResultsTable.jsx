@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ConverterDetailModal from './ConverterDetailModal';
 
-const RESULTS_PER_PAGE = 25;
-
-export default function ResultsTable({ results, loading, onPageChange, pagination }) {
+export default function ResultsTable({ results, loading, onLoadMore, pagination, hasMore }) {
   const [selectedConverter, setSelectedConverter] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const observerRef = useRef(null);
+  const loadMoreRef = useRef(null);
 
   const handleRowClick = (converter) => {
     setSelectedConverter(converter);
@@ -17,7 +17,44 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
     setSelectedConverter(null);
   };
 
-  if (loading) {
+  // Set up intersection observer for infinite scroll
+  useEffect(() => {
+    // Cleanup previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
+    // Create new observer
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        // When the load more element is visible and we have more data to load
+        if (entry.isIntersecting && hasMore && !loading) {
+          onLoadMore();
+        }
+      },
+      {
+        root: null,
+        rootMargin: '200px', // Start loading 200px before reaching the bottom
+        threshold: 0.1,
+      }
+    );
+
+    // Observe the load more element
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [hasMore, loading, onLoadMore]);
+
+  // Show loading spinner only on initial load (no results yet)
+  if (loading && results.length === 0) {
     return (
       <div className="card p-12">
         <div className="flex flex-col items-center justify-center">
@@ -216,113 +253,37 @@ export default function ResultsTable({ results, loading, onPageChange, paginatio
           ))}
         </div>
 
-        {/* Pagination */}
-        {pagination && pagination.count > 0 && (() => {
-          const totalPages = Math.ceil(pagination.count / RESULTS_PER_PAGE);
-          const maxVisiblePages = 5;
-          let startPage = Math.max(1, pagination.currentPage - Math.floor(maxVisiblePages / 2));
-          let endPage = startPage + maxVisiblePages - 1;
+        {/* Infinite Scroll - Load More Section */}
+        {/* Only show this section when there are more results to load or currently loading */}
+        {pagination && pagination.count > 0 && (hasMore || loading) && (
+          <div className="bg-primary-50 dark:bg-primary-900 px-4 py-3 border-t border-primary-200 dark:border-primary-700 sm:px-6">
+            <div className="flex flex-col items-center gap-4">
+              {/* Load more trigger element (invisible, used for intersection observer) */}
+              <div ref={loadMoreRef} className="h-1" />
 
-          if (endPage > totalPages) {
-            endPage = totalPages;
-            startPage = Math.max(1, endPage - maxVisiblePages + 1);
-          }
-
-          if (totalPages <= 1) {
-            return null;
-          }
-
-          const visiblePages = [];
-          for (let page = startPage; page <= endPage; page += 1) {
-            visiblePages.push(page);
-          }
-
-          const showFirstPage = startPage > 1;
-          const showLastPage = endPage < totalPages;
-          const showLeadingEllipsis = startPage > 2;
-          const showTrailingEllipsis = endPage < totalPages - 1;
-
-          const showingFrom = ((pagination.currentPage - 1) * RESULTS_PER_PAGE) + 1;
-          const showingTo = Math.min(pagination.currentPage * RESULTS_PER_PAGE, pagination.count);
-
-          const pageButtonBaseClasses =
-            'px-3 py-1 text-sm font-medium rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-accent-500';
-
-          const getPageButtonClasses = (page) => {
-            if (page === pagination.currentPage) {
-              return `${pageButtonBaseClasses} bg-accent-600 text-white border-accent-600 cursor-default`;
-            }
-
-            return `${pageButtonBaseClasses} bg-white text-primary-700 border-primary-200 hover:bg-primary-50 dark:bg-primary-800 dark:text-primary-100 dark:border-primary-600 dark:hover:bg-primary-700`;
-          };
-
-          return (
-            <div className="bg-primary-50 dark:bg-primary-900 px-4 py-3 border-t border-primary-200 dark:border-primary-700 sm:px-6">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="text-sm text-primary-700 dark:text-primary-300">
-                  Showing <span className="font-medium">{showingFrom}</span> to{' '}
-                  <span className="font-medium">{showingTo}</span> of{' '}
-                  <span className="font-medium">{pagination.count}</span> results
+              {/* Loading indicator when fetching more results */}
+              {loading && (
+                <div className="flex flex-col items-center justify-center py-4">
+                  <svg className="animate-spin h-8 w-8 text-accent-600 mb-2" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p className="text-sm text-primary-600 dark:text-primary-400">Loading more results...</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => onPageChange(pagination.currentPage - 1)}
-                    disabled={!pagination.previous}
-                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <div className="flex items-center gap-1">
-                    {showFirstPage && (
-                      <button
-                        onClick={() => onPageChange(1)}
-                        disabled={pagination.currentPage === 1}
-                        className={getPageButtonClasses(1)}
-                        aria-current={pagination.currentPage === 1 ? 'page' : undefined}
-                      >
-                        1
-                      </button>
-                    )}
-                    {showLeadingEllipsis && (
-                      <span className="px-2 text-primary-400 dark:text-primary-500">…</span>
-                    )}
-                    {visiblePages.map((page) => (
-                      <button
-                        key={page}
-                        onClick={() => onPageChange(page)}
-                        disabled={page === pagination.currentPage}
-                        className={getPageButtonClasses(page)}
-                        aria-current={page === pagination.currentPage ? 'page' : undefined}
-                      >
-                        {page}
-                      </button>
-                    ))}
-                    {showTrailingEllipsis && (
-                      <span className="px-2 text-primary-400 dark:text-primary-500">…</span>
-                    )}
-                    {showLastPage && (
-                      <button
-                        onClick={() => onPageChange(totalPages)}
-                        disabled={pagination.currentPage === totalPages}
-                        className={getPageButtonClasses(totalPages)}
-                        aria-current={pagination.currentPage === totalPages ? 'page' : undefined}
-                      >
-                        {totalPages}
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => onPageChange(pagination.currentPage + 1)}
-                    disabled={!pagination.next}
-                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              )}
+
+              {/* Manual load more button (backup for intersection observer) */}
+              {hasMore && !loading && (
+                <button
+                  onClick={onLoadMore}
+                  className="btn-primary px-6 py-2"
+                >
+                  Load More Results
+                </button>
+              )}
             </div>
-          );
-        })()}
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}

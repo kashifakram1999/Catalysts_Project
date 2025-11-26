@@ -9,11 +9,19 @@ export default function Home() {
   const [pagination, setPagination] = useState(null);
   const [currentFilters, setCurrentFilters] = useState({});
   const [searched, setSearched] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
-  const handleSearch = async (filters, page = 1) => {
+  const handleSearch = async (filters, page = 1, isLoadMore = false) => {
     setLoading(true);
     setSearched(true);
-    setCurrentFilters(filters);
+
+    // Only update filters and reset results on new search
+    if (!isLoadMore) {
+      setCurrentFilters(filters);
+      setResults([]);
+      setCurrentPage(1);
+    }
 
     try {
       const response = await convertersAPI.getConverters({
@@ -21,24 +29,37 @@ export default function Home() {
         page
       });
 
-      setResults(response.data.results);
+      // Append results for load more, replace for new search
+      if (isLoadMore) {
+        setResults(prev => [...prev, ...response.data.results]);
+      } else {
+        setResults(response.data.results);
+      }
+
       setPagination({
         count: response.data.count,
         next: response.data.next,
         previous: response.data.previous,
         currentPage: page
       });
+
+      setHasMore(!!response.data.next);
+      setCurrentPage(page);
     } catch (error) {
       console.error('Error fetching converters:', error);
-      setResults([]);
+      if (!isLoadMore) {
+        setResults([]);
+      }
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePageChange = (page) => {
-    handleSearch(currentFilters, page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleLoadMore = () => {
+    if (!loading && hasMore) {
+      handleSearch(currentFilters, currentPage + 1, true);
+    }
   };
 
   const handleReset = () => {
@@ -46,6 +67,8 @@ export default function Home() {
     setPagination(null);
     setCurrentFilters({});
     setSearched(false);
+    setCurrentPage(1);
+    setHasMore(false);
   };
 
   return (
@@ -75,8 +98,9 @@ export default function Home() {
             <ResultsTable
               results={results}
               loading={loading}
-              onPageChange={handlePageChange}
+              onLoadMore={handleLoadMore}
               pagination={pagination}
+              hasMore={hasMore}
             />
           </div>
         )}
