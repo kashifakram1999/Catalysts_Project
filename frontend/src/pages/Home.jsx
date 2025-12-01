@@ -3,6 +3,30 @@ import SearchForm from '../components/SearchForm';
 import ResultsTable from '../components/ResultsTable';
 import { convertersAPI } from '../services/api';
 
+// Keep Converter Unlimited entries at the top of the results list.
+const prioritizeConverterUnlimited = (converters = []) => {
+  if (!Array.isArray(converters)) {
+    return [];
+  }
+
+  const priorityFlag = 'converter unlimited';
+  const prioritized = [];
+  const others = [];
+
+  converters.forEach((converter) => {
+    const manufacturer = (converter.manufacturer_name || '').toLowerCase();
+    const isPriority = manufacturer.includes(priorityFlag);
+
+    if (isPriority) {
+      prioritized.push(converter);
+    } else {
+      others.push(converter);
+    }
+  });
+
+  return [...prioritized, ...others];
+};
+
 export default function Home() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -31,9 +55,9 @@ export default function Home() {
 
       // Append results for load more, replace for new search
       if (isLoadMore) {
-        setResults(prev => [...prev, ...response.data.results]);
+        setResults(prev => prioritizeConverterUnlimited([...prev, ...response.data.results]));
       } else {
-        setResults(response.data.results);
+        setResults(prioritizeConverterUnlimited(response.data.results));
       }
 
       setPagination({
