@@ -5,7 +5,7 @@ API Views for catalytic converter data
 from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Q, Min, Max, Count
+from django.db.models import Q, Min, Max, Count, Case, When, Value, IntegerField
 from .models import Manufacturer, CatalyticConverter, BlogPost
 from .serializers import (
     ManufacturerSerializer,
@@ -147,10 +147,23 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """
         Filter queryset based on query parameters
+        Prioritize Converter Unlimited results to appear first
         """
         base_queryset = super().get_queryset()
         params = self._get_filter_params()
-        return self.filter_queryset_by_params(base_queryset, params)
+        queryset = self.filter_queryset_by_params(base_queryset, params)
+
+        # Add custom ordering to prioritize Converter Unlimited
+        queryset = queryset.annotate(
+            is_converter_unlimited=Case(
+                When(manufacturer__name__iexact='Converter Unlimited', then=Value(0)),
+                When(manufacturer__name__iexact='Converter Unlimited, Inc.', then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField()
+            )
+        ).order_by('is_converter_unlimited', '-eo_date')
+
+        return queryset
 
     @action(detail=False, methods=['get'])
     def makes(self, request):

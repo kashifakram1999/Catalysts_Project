@@ -12,18 +12,6 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
-  // Helper function to prioritize Converter Unlimited results
-  const sortResultsByConverterUnlimited = (resultsArray) => {
-    return [...resultsArray].sort((a, b) => {
-      const aIsConverterUnlimited = a.manufacturer_name?.toLowerCase() === 'converter unlimited';
-      const bIsConverterUnlimited = b.manufacturer_name?.toLowerCase() === 'converter unlimited';
-
-      if (aIsConverterUnlimited && !bIsConverterUnlimited) return -1;
-      if (!aIsConverterUnlimited && bIsConverterUnlimited) return 1;
-      return 0; // Keep original order for all others
-    });
-  };
-
   const handleSearch = async (filters, page = 1, isLoadMore = false) => {
     setLoading(true);
     setSearched(true);
@@ -41,15 +29,11 @@ export default function Home() {
         page
       });
 
-      // Sort the new results to prioritize Converter Unlimited
-      const sortedResults = sortResultsByConverterUnlimited(response.data.results);
-
       // Append results for load more, replace for new search
       if (isLoadMore) {
-        // When loading more, combine and re-sort all results
-        setResults(prev => sortResultsByConverterUnlimited([...prev, ...sortedResults]));
+        setResults(prev => [...prev, ...response.data.results]);
       } else {
-        setResults(sortedResults);
+        setResults(response.data.results);
       }
 
       setPagination({
