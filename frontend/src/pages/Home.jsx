@@ -3,30 +3,6 @@ import SearchForm from '../components/SearchForm';
 import ResultsTable from '../components/ResultsTable';
 import { convertersAPI } from '../services/api';
 
-// Keep Converter Unlimited entries at the top of the results list.
-const prioritizeConverterUnlimited = (converters = []) => {
-  if (!Array.isArray(converters)) {
-    return [];
-  }
-
-  const priorityFlag = 'converter unlimited';
-  const prioritized = [];
-  const others = [];
-
-  converters.forEach((converter) => {
-    const manufacturer = (converter.manufacturer_name || '').toLowerCase();
-    const isPriority = manufacturer.includes(priorityFlag);
-
-    if (isPriority) {
-      prioritized.push(converter);
-    } else {
-      others.push(converter);
-    }
-  });
-
-  return [...prioritized, ...others];
-};
-
 export default function Home() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -35,6 +11,18 @@ export default function Home() {
   const [searched, setSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+
+  // Helper function to prioritize Converter Unlimited results
+  const sortResultsByConverterUnlimited = (resultsArray) => {
+    return [...resultsArray].sort((a, b) => {
+      const aIsConverterUnlimited = a.manufacturer_name?.toLowerCase() === 'converter unlimited';
+      const bIsConverterUnlimited = b.manufacturer_name?.toLowerCase() === 'converter unlimited';
+
+      if (aIsConverterUnlimited && !bIsConverterUnlimited) return -1;
+      if (!aIsConverterUnlimited && bIsConverterUnlimited) return 1;
+      return 0; // Keep original order for all others
+    });
+  };
 
   const handleSearch = async (filters, page = 1, isLoadMore = false) => {
     setLoading(true);
@@ -53,11 +41,15 @@ export default function Home() {
         page
       });
 
+      // Sort the new results to prioritize Converter Unlimited
+      const sortedResults = sortResultsByConverterUnlimited(response.data.results);
+
       // Append results for load more, replace for new search
       if (isLoadMore) {
-        setResults(prev => prioritizeConverterUnlimited([...prev, ...response.data.results]));
+        // When loading more, combine and re-sort all results
+        setResults(prev => sortResultsByConverterUnlimited([...prev, ...sortedResults]));
       } else {
-        setResults(prioritizeConverterUnlimited(response.data.results));
+        setResults(sortedResults);
       }
 
       setPagination({
