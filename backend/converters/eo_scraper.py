@@ -1412,32 +1412,61 @@ class CARBEOScraper:
                     name=manufacturer_name
                 )
 
-                # Prepare converter data
+                # Extract all key fields for exact matching
                 eo_number = data.get('executive_order')
-                test_group = data.get('test_group', '')
+                test_group = data.get('test_group') or ''
+                part_number = data.get('part_number') or ''
+                series_model = data.get('series_model') or ''
+                converter_location = data.get('converter_location') or ''
+                converter_type = data.get('converter_type') or ''
+                make = data.get('make') or ''
+                model = data.get('model') or ''
+                model_year_start = data.get('model_year_start')
+                model_year_end = data.get('model_year_end')
+                engine_size = data.get('engine_size') or ''
+                application_type = data.get('application_type') or ''
+                cert_level = data.get('cert_level') or ''
+                vehicle_class = data.get('vehicle_class') or ''
+                quantity = data.get('quantity')
 
-                # Try to find existing converter
-                existing = CatalyticConverter.objects.filter(
+                # Remove fields from data that we'll use as lookup keys
+                defaults = {k: v for k, v in data.items() if k not in [
+                    'executive_order', 'test_group', 'part_number', 'series_model',
+                    'converter_location', 'converter_type', 'make', 'model',
+                    'model_year_start', 'model_year_end', 'engine_size',
+                    'application_type', 'cert_level', 'vehicle_class', 'quantity'
+                ]}
+                defaults['last_scraped'] = timezone.now()
+
+                # Use get_or_create with ALL distinguishing fields
+                # This ensures exact match - first run inserts all, subsequent runs skip exact duplicates
+                converter, created = CatalyticConverter.objects.get_or_create(
+                    manufacturer=manufacturer,
                     executive_order=eo_number,
-                    test_group=test_group
-                ).first()
+                    test_group=test_group,
+                    part_number=part_number,
+                    series_model=series_model,
+                    converter_location=converter_location,
+                    converter_type=converter_type,
+                    make=make,
+                    model=model,
+                    model_year_start=model_year_start,
+                    model_year_end=model_year_end,
+                    engine_size=engine_size,
+                    application_type=application_type,
+                    cert_level=cert_level,
+                    vehicle_class=vehicle_class,
+                    quantity=quantity,
+                    defaults=defaults
+                )
 
-                if existing:
-                    # Update existing
-                    for key, value in data.items():
-                        if key != 'scraped_at' and value:
-                            setattr(existing, key, value)
-                    existing.manufacturer = manufacturer
-                    existing.last_scraped = timezone.now()
-                    existing.save()
-                    updated_count += 1
-                else:
-                    # Create new
-                    CatalyticConverter.objects.create(
-                        manufacturer=manufacturer,
-                        **data
-                    )
+                if created:
                     created_count += 1
+                else:
+                    # Record exists, just update last_scraped
+                    converter.last_scraped = timezone.now()
+                    converter.save(update_fields=['last_scraped'])
+                    updated_count += 1
 
             except Exception as e:
                 logger.error(f"Error saving converter: {e}")

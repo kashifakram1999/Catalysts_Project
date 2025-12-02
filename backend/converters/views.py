@@ -45,9 +45,11 @@ class CatalyticConverterViewSet(viewsets.ReadOnlyModelViewSet):
         'make',
         'model_year_start',
         'eo_date',
+        'is_converter_unlimited',
         'manufacturer__name',
     ]
-    ordering = ['-eo_date']
+    # Default ordering keeps Converter Unlimited records at the top
+    ordering = ['is_converter_unlimited', '-eo_date']
 
     def get_serializer_class(self):
         if self.action == 'retrieve':

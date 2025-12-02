@@ -110,33 +110,49 @@ class Command(BaseCommand):
                     manufacturer.contact_info = manufacturer_contact
                     manufacturer.save()
 
-                # Prepare converter data
-                converter_data = {
-                    'manufacturer': manufacturer,
-                    'executive_order': cleaned_data.get('executive_order'),
-                    'series_model': cleaned_data.get('series_model'),
-                    'product_name': cleaned_data.get('product_name'),
-                    'model_year_start': cleaned_data.get('model_year_start'),
-                    'model_year_end': cleaned_data.get('model_year_end'),
-                    'make': cleaned_data.get('make'),
-                    'model': cleaned_data.get('model'),
-                    'vehicle_class': cleaned_data.get('vehicle_class'),
-                    'engine_size': cleaned_data.get('engine_size'),
-                    'test_group': cleaned_data.get('test_group'),
-                    'cert_level': cleaned_data.get('cert_level'),
-                    'application_type': cleaned_data.get('application_type'),
-                    'converter_location': cleaned_data.get('converter_location'),
-                    'converter_type': cleaned_data.get('converter_type'),
-                    'quantity': cleaned_data.get('quantity'),
+                # Extract all key fields for exact matching
+                executive_order = cleaned_data.get('executive_order')
+                test_group = cleaned_data.get('test_group') or ''
+                series_model = cleaned_data.get('series_model') or ''
+                product_name = cleaned_data.get('product_name') or ''
+                make = cleaned_data.get('make') or ''
+                model = cleaned_data.get('model') or ''
+                model_year_start = cleaned_data.get('model_year_start')
+                model_year_end = cleaned_data.get('model_year_end')
+                vehicle_class = cleaned_data.get('vehicle_class') or ''
+                engine_size = cleaned_data.get('engine_size') or ''
+                cert_level = cleaned_data.get('cert_level') or ''
+                application_type = cleaned_data.get('application_type') or ''
+                converter_location = cleaned_data.get('converter_location') or ''
+                converter_type = cleaned_data.get('converter_type') or ''
+                quantity = cleaned_data.get('quantity')
+
+                # Prepare defaults (fields not used in lookup)
+                defaults = {
+                    'product_name': product_name,
                     'eo_date': cleaned_data.get('eo_date'),
                     'last_scraped': timezone.now(),
                 }
 
-                # Update or create converter
-                converter, created = CatalyticConverter.objects.update_or_create(
-                    executive_order=cleaned_data.get('executive_order'),
+                # Use get_or_create with ALL distinguishing fields
+                # This ensures exact match - first run inserts all, subsequent runs skip exact duplicates
+                converter, created = CatalyticConverter.objects.get_or_create(
                     manufacturer=manufacturer,
-                    defaults=converter_data
+                    executive_order=executive_order,
+                    test_group=test_group,
+                    series_model=series_model,
+                    make=make,
+                    model=model,
+                    model_year_start=model_year_start,
+                    model_year_end=model_year_end,
+                    vehicle_class=vehicle_class,
+                    engine_size=engine_size,
+                    cert_level=cert_level,
+                    application_type=application_type,
+                    converter_location=converter_location,
+                    converter_type=converter_type,
+                    quantity=quantity,
+                    defaults=defaults
                 )
 
                 if created:
