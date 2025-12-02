@@ -316,15 +316,6 @@ CELERY_BEAT_SCHEDULE = {
             'eo_numbers': None,
         },
     },
-    'weekly_pdf_scrape': {
-        'task': 'converters.tasks.scrape_pdf_task',
-        'schedule': crontab(hour=4, minute=0, day_of_week='sun'),  # Sundays at 4:00 AM UTC
-        'options': {'queue': 'scraping'},
-        'kwargs': {
-            'use_local': False,
-            'limit': None,
-        },
-    },
     'daily_cleanup_task_results': {
         'task': 'converters.tasks.cleanup_old_task_results',
         'schedule': crontab(hour=5, minute=0),  # Daily cleanup at 5:00 AM UTC
