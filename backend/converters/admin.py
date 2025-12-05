@@ -55,6 +55,12 @@ class CARBAdminSite(AdminSite):
             path('scraper-dashboard/api/resume/',
                  self.admin_view(admin_views.resume_scraper_api),
                  name='resume_scraper_api'),
+            path('csv-upload/',
+                 self.admin_view(admin_views.csv_upload_view),
+                 name='csv_upload'),
+            path('csv-download/sample/',
+                 self.admin_view(admin_views.download_sample_csv),
+                 name='csv_download_sample'),
         ]
         return custom_urls + urls
 
