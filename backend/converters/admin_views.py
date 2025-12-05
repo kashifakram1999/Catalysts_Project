@@ -872,3 +872,190 @@ def resume_scraper_api(request):
     except Exception as e:
         import traceback
         return JsonResponse({'error': str(e), 'traceback': traceback.format_exc()}, status=500)
+
+
+@staff_member_required
+def csv_upload_view(request):
+    """
+    Handle CSV file upload for bulk converter data import
+    """
+    if request.method == 'POST':
+        csv_file = request.FILES.get('csv_file')
+
+        if not csv_file:
+            return JsonResponse({'error': 'No file uploaded'}, status=400)
+
+        if not csv_file.name.endswith('.csv'):
+            return JsonResponse({'error': 'File must be a CSV'}, status=400)
+
+        try:
+            import csv
+            import io
+            from decimal import Decimal, InvalidOperation
+
+            # Read CSV file
+            file_data = csv_file.read().decode('utf-8')
+            csv_reader = csv.DictReader(io.StringIO(file_data))
+
+            # Validate headers
+            required_headers = [
+                'executive_order', 'series_model', 'make', 'model',
+                'model_year_start', 'model_year_end', 'vehicle_class',
+                'engine_size', 'test_group', 'cert_level', 'application_type',
+                'converter_location', 'converter_type', 'quantity', 'eo_date',
+                'manufacturer', 'product_name', 'part_number'
+            ]
+
+            headers = csv_reader.fieldnames
+            missing_headers = [h for h in required_headers if h not in headers]
+
+            if missing_headers:
+                return JsonResponse({
+                    'error': f'Missing required columns: {", ".join(missing_headers)}'
+                }, status=400)
+
+            # Process CSV rows
+            created_count = 0
+            updated_count = 0
+            error_count = 0
+            errors = []
+
+            for row_num, row in enumerate(csv_reader, start=2):
+                try:
+                    # Get or create manufacturer
+                    manufacturer_name = row.get('manufacturer', '').strip()
+                    if not manufacturer_name:
+                        errors.append(f"Row {row_num}: Manufacturer name is required")
+                        error_count += 1
+                        continue
+
+                    manufacturer, _ = Manufacturer.objects.get_or_create(
+                        name=manufacturer_name,
+                        defaults={'contact_info': ''}
+                    )
+
+                    # Parse date
+                    eo_date_str = row.get('eo_date', '').strip()
+                    if eo_date_str:
+                        try:
+                            from datetime import datetime
+                            eo_date = datetime.strptime(eo_date_str, '%Y-%m-%d').date()
+                        except ValueError:
+                            errors.append(f"Row {row_num}: Invalid date format '{eo_date_str}'. Use YYYY-MM-DD")
+                            error_count += 1
+                            continue
+                    else:
+                        eo_date = None
+
+                    # Parse quantity
+                    quantity_str = row.get('quantity', '1').strip()
+                    try:
+                        quantity = int(quantity_str) if quantity_str else 1
+                    except ValueError:
+                        errors.append(f"Row {row_num}: Invalid quantity '{quantity_str}'")
+                        error_count += 1
+                        continue
+
+                    # Parse year fields
+                    try:
+                        year_start = int(row.get('model_year_start', 0))
+                        year_end = int(row.get('model_year_end', 0))
+                    except ValueError:
+                        errors.append(f"Row {row_num}: Invalid year values")
+                        error_count += 1
+                        continue
+
+                    # Create or update converter
+                    executive_order = row.get('executive_order', '').strip()
+                    if not executive_order:
+                        errors.append(f"Row {row_num}: Executive order is required")
+                        error_count += 1
+                        continue
+
+                    # Check if converter exists (by executive_order and series_model)
+                    series_model = row.get('series_model', '').strip()
+                    converter, created = CatalyticConverter.objects.update_or_create(
+                        executive_order=executive_order,
+                        series_model=series_model,
+                        defaults={
+                            'manufacturer': manufacturer,
+                            'part_number': row.get('part_number', '').strip(),
+                            'product_name': row.get('product_name', '').strip(),
+                            'model_year_start': year_start,
+                            'model_year_end': year_end,
+                            'make': row.get('make', '').strip(),
+                            'model': row.get('model', '').strip(),
+                            'vehicle_class': row.get('vehicle_class', '').strip(),
+                            'engine_size': row.get('engine_size', '').strip(),
+                            'test_group': row.get('test_group', '').strip(),
+                            'cert_level': row.get('cert_level', '').strip(),
+                            'application_type': row.get('application_type', '').strip(),
+                            'converter_location': row.get('converter_location', '').strip(),
+                            'converter_type': row.get('converter_type', '').strip(),
+                            'quantity': quantity,
+                            'eo_date': eo_date,
+                            'notes': row.get('notes', '').strip(),
+                            'is_active': True,
+                            'last_scraped': timezone.now(),
+                        }
+                    )
+
+                    if created:
+                        created_count += 1
+                    else:
+                        updated_count += 1
+
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+                    error_count += 1
+
+            # Build response
+            response_data = {
+                'success': True,
+                'created': created_count,
+                'updated': updated_count,
+                'errors': error_count,
+                'total_processed': created_count + updated_count + error_count,
+            }
+
+            if errors:
+                response_data['error_details'] = errors[:20]  # Limit to first 20 errors
+                if len(errors) > 20:
+                    response_data['error_details'].append(f"... and {len(errors) - 20} more errors")
+
+            return JsonResponse(response_data)
+
+        except Exception as e:
+            import traceback
+            return JsonResponse({
+                'error': f'Error processing CSV: {str(e)}',
+                'traceback': traceback.format_exc()
+            }, status=500)
+
+    return JsonResponse({'error': 'POST method required'}, status=400)
+
+
+@staff_member_required
+def download_sample_csv(request):
+    """
+    Download a sample CSV file with example catalytic converter data
+    """
+    import os
+    from django.http import FileResponse, Http404
+
+    # Path to sample CSV file
+    sample_csv_path = os.path.join(
+        os.path.dirname(__file__),
+        'sample_catalytic_converters.csv'
+    )
+
+    if not os.path.exists(sample_csv_path):
+        raise Http404("Sample CSV file not found")
+
+    response = FileResponse(
+        open(sample_csv_path, 'rb'),
+        content_type='text/csv'
+    )
+    response['Content-Disposition'] = 'attachment; filename="sample_catalytic_converters.csv"'
+
+    return response

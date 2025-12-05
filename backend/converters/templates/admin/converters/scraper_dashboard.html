@@ -502,6 +502,38 @@
         </form>
     </div>
 
+    <!-- CSV Upload Section -->
+    <div class="scraper-section">
+        <h2>📤 CSV Upload</h2>
+        <p class="scraper-subtitle">
+            Upload catalytic converter data in bulk using a CSV file. Download the sample CSV file to see the required format.
+        </p>
+
+        <div class="website-scraper-grid" style="grid-template-columns: 1fr;">
+            <div class="option-card">
+                <h3>Upload CSV File</h3>
+                <div class="form-group">
+                    <input type="file" id="csv_file" name="csv_file" accept=".csv"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%;">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        File must be in CSV format with required columns.
+                        <a href="{% url 'admin:csv_download_sample' %}" style="color: #417690; font-weight: bold;">Download Sample CSV</a>
+                    </small>
+                </div>
+
+                <button type="button" id="upload_csv_btn" class="btn btn-success" onclick="uploadCSV();">
+                    Upload CSV
+                </button>
+
+                <a href="{% url 'admin:csv_download_sample' %}" class="btn btn-primary" style="margin-left: 10px;">
+                    Download Sample CSV
+                </a>
+
+                <div id="csv_upload_result" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Quick Actions -->
     <div class="scraper-section">
         <h2>📊 Quick Actions</h2>
@@ -738,5 +770,113 @@ window.addEventListener('beforeunload', function() {
         clearInterval(checkInterval);
     }
 });
+
+// CSV Upload Function
+async function uploadCSV() {
+    const fileInput = document.getElementById('csv_file');
+    const uploadButton = document.getElementById('upload_csv_btn');
+    const resultDiv = document.getElementById('csv_upload_result');
+
+    if (!fileInput.files || !fileInput.files[0]) {
+        resultDiv.innerHTML = `
+            <div class="alert alert-error">
+                Please select a CSV file first.
+            </div>
+        `;
+        return;
+    }
+
+    const file = fileInput.files[0];
+
+    if (!file.name.endsWith('.csv')) {
+        resultDiv.innerHTML = `
+            <div class="alert alert-error">
+                File must be a CSV file (.csv extension).
+            </div>
+        `;
+        return;
+    }
+
+    // Show loading state
+    uploadButton.disabled = true;
+    uploadButton.classList.add('btn-with-loader');
+    uploadButton.innerHTML = '<span class="btn-loader"></span> Uploading...';
+
+    resultDiv.innerHTML = `
+        <div class="alert alert-info">
+            Uploading and processing CSV file...
+        </div>
+    `;
+
+    try {
+        const formData = new FormData();
+        formData.append('csv_file', file);
+
+        const response = await fetch('{% url "admin:csv_upload" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            let resultHTML = `
+                <div class="alert alert-success">
+                    ✅ CSV upload completed successfully!
+                    <br><br>
+                    <strong>Summary:</strong>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li>Total Processed: ${data.total_processed} rows</li>
+                        <li>Created: ${data.created} new converters</li>
+                        <li>Updated: ${data.updated} existing converters</li>
+                        <li>Errors: ${data.errors} rows</li>
+                    </ul>
+                </div>
+            `;
+
+            if (data.error_details && data.error_details.length > 0) {
+                resultHTML += `
+                    <div class="alert alert-warning" style="margin-top: 15px;">
+                        <strong>⚠️ Errors encountered:</strong>
+                        <ul style="margin: 10px 0; padding-left: 20px; max-height: 200px; overflow-y: auto;">
+                            ${data.error_details.map(err => `<li>${err}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            resultDiv.innerHTML = resultHTML;
+
+            // Clear file input
+            fileInput.value = '';
+
+            // Reload stats after 2 seconds
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        } else {
+            resultDiv.innerHTML = `
+                <div class="alert alert-error">
+                    ❌ Error: ${data.error || 'Unknown error occurred'}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error uploading CSV:', error);
+        resultDiv.innerHTML = `
+            <div class="alert alert-error">
+                ❌ Network error: ${error.message}
+            </div>
+        `;
+    } finally {
+        // Reset button
+        uploadButton.disabled = false;
+        uploadButton.classList.remove('btn-with-loader');
+        uploadButton.innerHTML = 'Upload CSV';
+    }
+}
 </script>
 {% endblock %}
