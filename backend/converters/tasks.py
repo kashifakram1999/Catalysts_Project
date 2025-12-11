@@ -93,115 +93,116 @@ def strip_ansi_codes(text):
     return ansi_escape.sub('', text)
 
 
-@shared_task(bind=True, name='converters.tasks.scrape_pdf_task')
-def scrape_pdf_task(self, use_local=True, limit=None):
-    """
-    Celery task to scrape PDF data
+# PDF SCRAPER TASK - COMMENTED OUT (No longer needed)
+# @shared_task(bind=True, name='converters.tasks.scrape_pdf_task')
+# def scrape_pdf_task(self, use_local=True, limit=None):
+#     """
+#     Celery task to scrape PDF data
 
-    Args:
-        use_local (bool): Whether to use local PDF file
-        limit (int): Limit number of records to scrape (optional)
+#     Args:
+#         use_local (bool): Whether to use local PDF file
+#         limit (int): Limit number of records to scrape (optional)
 
-    Returns:
-        dict: Scraping statistics
-    """
-    logger.info(f"Starting PDF scraping task {self.request.id}")
+#     Returns:
+#         dict: Scraping statistics
+#     """
+#     logger.info(f"Starting PDF scraping task {self.request.id}")
 
-    try:
-        # Update task state
-        self.update_state(
-            state='PROGRESS',
-            meta={
-                'status': 'Initializing PDF scraper...',
-                'current': 0,
-                'total': 100,
-            }
-        )
+#     try:
+#         # Update task state
+#         self.update_state(
+#             state='PROGRESS',
+#             meta={
+#                 'status': 'Initializing PDF scraper...',
+#                 'current': 0,
+#                 'total': 100,
+#             }
+#         )
 
-        # Capture command output
-        output_lines = []
-        buffer = ""
-        task_ref = self
+#         # Capture command output
+#         output_lines = []
+#         buffer = ""
+#         task_ref = self
 
-        class OutputCapture:
-            def write(self, text):
-                nonlocal buffer
-                buffer += text
+#         class OutputCapture:
+#             def write(self, text):
+#                 nonlocal buffer
+#                 buffer += text
 
-                # Process complete lines
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    line = strip_ansi_codes(line).strip()
-                    if line:
-                        output_lines.append(line)
-                        logger.info(line)
+#                 # Process complete lines
+#                 while '\n' in buffer:
+#                     line, buffer = buffer.split('\n', 1)
+#                     line = strip_ansi_codes(line).strip()
+#                     if line:
+#                         output_lines.append(line)
+#                         logger.info(line)
 
-            def flush(self):
-                nonlocal buffer
-                if buffer.strip():
-                    line = strip_ansi_codes(buffer).strip()
-                    if line:
-                        output_lines.append(line)
-                        logger.info(line)
-                    buffer = ""
+#             def flush(self):
+#                 nonlocal buffer
+#                 if buffer.strip():
+#                     line = strip_ansi_codes(buffer).strip()
+#                     if line:
+#                         output_lines.append(line)
+#                         logger.info(line)
+#                     buffer = ""
 
-        out = OutputCapture()
+#         out = OutputCapture()
 
-        root_logger = progress_handler = None
-        try:
-            root_logger, progress_handler = attach_progress_handler(
-                task_ref,
-                output_lines,
-                allowed_prefixes=SCRAPER_LOG_PREFIXES['pdf'],
-            )
+#         root_logger = progress_handler = None
+#         try:
+#             root_logger, progress_handler = attach_progress_handler(
+#                 task_ref,
+#                 output_lines,
+#                 allowed_prefixes=SCRAPER_LOG_PREFIXES['pdf'],
+#             )
 
-            # Prepare command arguments
-            cmd_args = ['--source=pdf']
-            if limit:
-                cmd_args.append(f'--limit={limit}')
-            if use_local:
-                cmd_args.append('--use-local')
-            else:
-                cmd_args.append('--remote')
+#             # Prepare command arguments
+#             cmd_args = ['--source=pdf']
+#             if limit:
+#                 cmd_args.append(f'--limit={limit}')
+#             if use_local:
+#                 cmd_args.append('--use-local')
+#             else:
+#                 cmd_args.append('--remote')
 
-            # Update progress
-            self.update_state(
-                state='PROGRESS',
-                meta={
-                    'status': 'Running PDF scraper...',
-                    'current': 10,
-                    'total': 100,
-                    'output': output_lines,
-                }
-            )
+#             # Update progress
+#             self.update_state(
+#                 state='PROGRESS',
+#                 meta={
+#                     'status': 'Running PDF scraper...',
+#                     'current': 10,
+#                     'total': 100,
+#                     'output': output_lines,
+#                 }
+#             )
 
-            # Run the scraping command
-            call_command('scrape_carb_data', *cmd_args, stdout=out, stderr=out)
-            out.flush()
+#             # Run the scraping command
+#             call_command('scrape_carb_data', *cmd_args, stdout=out, stderr=out)
+#             out.flush()
 
-            # Mark as completed
-            logger.info(f"PDF scraping task {self.request.id} completed successfully")
+#             # Mark as completed
+#             logger.info(f"PDF scraping task {self.request.id} completed successfully")
 
-            return {
-                'status': 'completed',
-                'output': output_lines,
-                'message': 'PDF scraping completed successfully',
-            }
-        finally:
-            if root_logger and progress_handler:
-                root_logger.removeHandler(progress_handler)
+#             return {
+#                 'status': 'completed',
+#                 'output': output_lines,
+#                 'message': 'PDF scraping completed successfully',
+#             }
+#         finally:
+#             if root_logger and progress_handler:
+#                 root_logger.removeHandler(progress_handler)
 
-    except Exception as e:
-        logger.error(f"PDF scraping task {self.request.id} failed: {str(e)}")
-        self.update_state(
-            state='FAILURE',
-            meta={
-                'status': 'Error during PDF scraping',
-                'error': str(e),
-                'output': output_lines if 'output_lines' in locals() else [],
-            }
-        )
-        raise
+#     except Exception as e:
+#         logger.error(f"PDF scraping task {self.request.id} failed: {str(e)}")
+#         self.update_state(
+#             state='FAILURE',
+#             meta={
+#                 'status': 'Error during PDF scraping',
+#                 'error': str(e),
+#                 'output': output_lines if 'output_lines' in locals() else [],
+#             }
+#         )
+#         raise
 
 
 @shared_task(

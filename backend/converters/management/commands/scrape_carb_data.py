@@ -58,12 +58,18 @@ class Command(BaseCommand):
         processor = CARBDataProcessor()
         all_data = []
 
-        # Scrape based on source
+        # PDF SCRAPER - COMMENTED OUT (No longer needed)
         if source in ['pdf', 'both']:
-            self.stdout.write('Scraping PDF data...')
-            pdf_data = scraper.scrape_pdf()
-            all_data.extend(pdf_data)
-            self.stdout.write(self.style.SUCCESS(f'Found {len(pdf_data)} records in PDF'))
+            self.stdout.write(self.style.WARNING('⚠️  PDF scraper has been disabled and is no longer available.'))
+            self.stdout.write(self.style.WARNING('Please use the website scraper or CSV upload instead.'))
+            if source == 'pdf':
+                return  # Exit if only PDF was requested
+        # # Scrape based on source
+        # # if source in ['pdf', 'both']:
+        # #     self.stdout.write('Scraping PDF data...')
+        # #     pdf_data = scraper.scrape_pdf()
+        # #     all_data.extend(pdf_data)
+        # #     self.stdout.write(self.style.SUCCESS(f'Found {len(pdf_data)} records in PDF'))
 
         if source in ['website', 'both']:
             self.stdout.write('Scraping website data...')

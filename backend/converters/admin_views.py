@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.http import JsonResponse
 from celery.result import AsyncResult
 from .models import CatalyticConverter, Manufacturer
-from .tasks import scrape_pdf_task, scrape_website_task, parallel_scrape_website
+from .tasks import scrape_website_task, parallel_scrape_website  # scrape_pdf_task - removed (no longer needed)
 
 
 def parse_scheduled_datetime(raw_value):
@@ -63,64 +63,65 @@ def scraper_dashboard(request):
     return render(request, 'admin/converters/scraper_dashboard.html', context)
 
 
-@staff_member_required
-def run_pdf_scraper(request):
-    """
-    Trigger PDF scraping operation using Celery
-    """
-    if request.method == 'POST':
-        use_local = request.POST.get('use_local') == 'true'
-        limit = request.POST.get('limit', None)
-        scheduled_time_raw = request.POST.get('scheduled_time', '').strip()
+# PDF SCRAPER VIEW - COMMENTED OUT (No longer needed)
+# @staff_member_required
+# def run_pdf_scraper(request):
+#     """
+#     Trigger PDF scraping operation using Celery
+#     """
+#     if request.method == 'POST':
+#         use_local = request.POST.get('use_local') == 'true'
+#         limit = request.POST.get('limit', None)
+#         scheduled_time_raw = request.POST.get('scheduled_time', '').strip()
 
-        try:
-            # Convert limit to int if provided
-            limit_int = int(limit) if limit and limit.strip() else None
+#         try:
+#             # Convert limit to int if provided
+#             limit_int = int(limit) if limit and limit.strip() else None
 
-            # Parse scheduled datetime (optional)
-            try:
-                scheduled_time = parse_scheduled_datetime(scheduled_time_raw)
-            except ValueError as exc:
-                messages.error(request, str(exc))
-                return redirect('admin:scraper_dashboard')
+#             # Parse scheduled datetime (optional)
+#             try:
+#                 scheduled_time = parse_scheduled_datetime(scheduled_time_raw)
+#             except ValueError as exc:
+#                 messages.error(request, str(exc))
+#                 return redirect('admin:scraper_dashboard')
 
-            task_kwargs = {
-                'use_local': use_local,
-                'limit': limit_int,
-            }
+#             task_kwargs = {
+#                 'use_local': use_local,
+#                 'limit': limit_int,
+#             }
 
-            # Launch Celery task
-            if scheduled_time and scheduled_time > timezone.now():
-                eta = scheduled_time.astimezone(timezone.utc)
-                task = scrape_pdf_task.apply_async(kwargs=task_kwargs, eta=eta)
-                progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=pdf"
-                display_time = timezone.localtime(scheduled_time).strftime('%B %d, %Y %I:%M %p %Z')
-                messages.success(
-                    request,
-                    f'PDF scraping scheduled for {display_time}. Task ID: {task.id}. '
-                    f'You can monitor it at {progress_url}'
-                )
-                return redirect('admin:scraper_dashboard')
-            else:
-                task = scrape_pdf_task.delay(**task_kwargs)
-                progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=pdf"
-                note = ''
-                if scheduled_time:
-                    note = ' (requested schedule was in the past, so it started immediately)'
-                messages.success(
-                    request,
-                    f'PDF scraping task started! Task ID: {task.id}{note}'
-                )
+#             # Launch Celery task
+#             if scheduled_time and scheduled_time > timezone.now():
+#                 eta = scheduled_time.astimezone(timezone.utc)
+#                 task = scrape_pdf_task.apply_async(kwargs=task_kwargs, eta=eta)
+#                 progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=pdf"
+#                 display_time = timezone.localtime(scheduled_time).strftime('%B %d, %Y %I:%M %p %Z')
+#                 messages.success(
+#                     request,
+#                     f'PDF scraping scheduled for {display_time}. Task ID: {task.id}. '
+#                     f'You can monitor it at {progress_url}'
+#                 )
+#                 return redirect('admin:scraper_dashboard')
+#             else:
+#                 task = scrape_pdf_task.delay(**task_kwargs)
+#                 progress_url = f"{reverse('admin:scraper_progress')}?task_id={task.id}&type=pdf"
+#                 note = ''
+#                 if scheduled_time:
+#                     note = ' (requested schedule was in the past, so it started immediately)'
+#                 messages.success(
+#                     request,
+#                     f'PDF scraping task started! Task ID: {task.id}{note}'
+#                 )
 
-                # Redirect to progress page for live monitoring
-                return redirect(progress_url)
+#                 # Redirect to progress page for live monitoring
+#                 return redirect(progress_url)
 
-        except Exception as e:
-            messages.error(request, f'Error starting PDF scraping task: {str(e)}')
+#         except Exception as e:
+#             messages.error(request, f'Error starting PDF scraping task: {str(e)}')
 
-        return redirect('admin:scraper_dashboard')
+#         return redirect('admin:scraper_dashboard')
 
-    return redirect('admin:scraper_dashboard')
+#     return redirect('admin:scraper_dashboard')
 
 
 @staff_member_required
@@ -618,7 +619,7 @@ def run_parallel_scraper(request):
                 return redirect('admin:scraper_dashboard')
 
             # Validate num_workers range
-            if num_workers_int < 1 or num_workers_int > 10:
+            if num_workers_int < 1 or num_workers_int > 50:
                 messages.error(request, 'Number of workers must be between 1 and 50.')
                 return redirect('admin:scraper_dashboard')
 
@@ -1057,5 +1058,73 @@ def download_sample_csv(request):
         content_type='text/csv'
     )
     response['Content-Disposition'] = 'attachment; filename="sample_catalytic_converters.csv"'
+
+    return response
+
+
+@staff_member_required
+def export_all_data_csv(request):
+    """
+    Export all catalytic converter data from the database to CSV
+    """
+    import csv
+    from django.http import HttpResponse
+
+    # Create HTTP response with CSV content type
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="catalytic_converters_export.csv"'
+
+    # Create CSV writer
+    writer = csv.writer(response, lineterminator='\n')
+
+    # Write header row
+    writer.writerow([
+        'executive_order',
+        'series_model',
+        'make',
+        'model',
+        'model_year_start',
+        'model_year_end',
+        'vehicle_class',
+        'engine_size',
+        'test_group',
+        'cert_level',
+        'application_type',
+        'converter_location',
+        'converter_type',
+        'quantity',
+        'eo_date',
+        'manufacturer',
+        'product_name',
+        'part_number',
+        'notes'
+    ])
+
+    # Query all converters from database
+    converters = CatalyticConverter.objects.select_related('manufacturer').all()
+
+    # Write data rows
+    for converter in converters:
+        writer.writerow([
+            converter.executive_order or '',
+            converter.series_model or '',
+            converter.make or '',
+            converter.model or '',
+            converter.model_year_start or '',
+            converter.model_year_end or '',
+            converter.vehicle_class or '',
+            converter.engine_size or '',
+            converter.test_group or '',
+            converter.cert_level or '',
+            converter.application_type or '',
+            converter.converter_location or '',
+            converter.converter_type or '',
+            converter.quantity or '',
+            converter.eo_date.strftime('%Y-%m-%d') if converter.eo_date else '',
+            converter.manufacturer.name if converter.manufacturer else '',
+            converter.product_name or '',
+            converter.part_number or '',
+            converter.notes or ''
+        ])
 
     return response
