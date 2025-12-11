@@ -28,9 +28,10 @@ class CARBAdminSite(AdminSite):
             path('scraper-dashboard/',
                  self.admin_view(admin_views.scraper_dashboard),
                  name='scraper_dashboard'),
-            path('scraper-dashboard/run-pdf/',
-                 self.admin_view(admin_views.run_pdf_scraper),
-                 name='run_pdf_scraper'),
+            # PDF scraper URL - COMMENTED OUT (No longer needed)
+            # path('scraper-dashboard/run-pdf/',
+            #      self.admin_view(admin_views.run_pdf_scraper),
+            #      name='run_pdf_scraper'),
             path('scraper-dashboard/run-website/',
                  self.admin_view(admin_views.run_website_scraper),
                  name='run_website_scraper'),
@@ -61,6 +62,9 @@ class CARBAdminSite(AdminSite):
             path('csv-download/sample/',
                  self.admin_view(admin_views.download_sample_csv),
                  name='csv_download_sample'),
+            path('csv-export/all/',
+                 self.admin_view(admin_views.export_all_data_csv),
+                 name='csv_export_all'),
         ]
         return custom_urls + urls
 

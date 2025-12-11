@@ -436,7 +436,7 @@
                     <h3>Worker Configuration</h3>
                     <div class="form-group">
                         <label for="num_workers">Number of Workers</label>
-                        <input type="number" name="num_workers" id="num_workers" value="4" min="1" max="10"
+                        <input type="number" name="num_workers" id="num_workers" value="4" min="1" max="50"
                                style="width: 100%;" required>
                         <small style="color: #666; display: block; margin-top: 5px;">
                             Recommended: 4-10 workers. More workers = faster scraping but higher resource usage.
@@ -542,6 +542,9 @@
         </a>
         <a href="{% url 'admin:converters_manufacturer_changelist' %}" class="btn btn-primary">
             View All Manufacturers
+        </a>
+        <a href="{% url 'admin:csv_export_all' %}" class="btn btn-success" style="margin-left: 10px;">
+            📥 Export All Data to CSV
         </a>
     </div>
 </div>
