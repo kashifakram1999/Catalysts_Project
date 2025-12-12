@@ -15,6 +15,7 @@ export default function CustomSelect({
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
+  const ignoreNextScroll = useRef(false);
 
   // Filter options based on search term
   const filteredOptions = searchable && searchTerm
@@ -58,6 +59,14 @@ export default function CustomSelect({
       if (dropdownRef.current && dropdownRef.current.contains(event.target)) {
         return;
       }
+
+      // Mobile browsers often auto-scroll inputs into view when they receive focus.
+      // Ignore that first programmatic scroll so the dropdown doesn't immediately close.
+      if (ignoreNextScroll.current) {
+        ignoreNextScroll.current = false;
+        return;
+      }
+
       setIsOpen(false);
       setSearchTerm('');
     }
@@ -87,7 +96,14 @@ export default function CustomSelect({
   };
 
   const toggleDropdown = () => {
-    setIsOpen(!isOpen);
+    setIsOpen((open) => {
+      const next = !open;
+      // Skip the first scroll event that happens when the search input is auto-focused on mobile.
+      if (next) {
+        ignoreNextScroll.current = true;
+      }
+      return next;
+    });
     if (isOpen) {
       setSearchTerm('');
     }
