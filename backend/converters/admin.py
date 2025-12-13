@@ -174,15 +174,15 @@ class BlogPostAdmin(admin.ModelAdmin):
 
 @admin.register(ScraperRun, site=admin_site)
 class ScraperRunAdmin(admin.ModelAdmin):
-    list_display = ['task_id', 'scraper_type', 'status', 'progress_percentage', 'processed_count', 'total_eo_count', 'started_at']
-    list_filter = ['status', 'scraper_type', 'started_at']
+    list_display = ['task_id', 'scraper_type', 'engine_used', 'status', 'progress_percentage', 'processed_count', 'total_eo_count', 'current_retry_pass', 'started_at']
+    list_filter = ['status', 'scraper_type', 'engine_used', 'started_at']
     search_fields = ['task_id']
     ordering = ['-started_at']
     readonly_fields = ['task_id', 'started_at', 'stopped_at', 'completed_at', 'updated_at', 'progress_percentage', 'remaining_eo_numbers']
 
     fieldsets = (
         ('Run Information', {
-            'fields': ('task_id', 'scraper_type', 'status', 'stop_requested')
+            'fields': ('task_id', 'scraper_type', 'engine_used', 'status', 'stop_requested')
         }),
         ('Configuration', {
             'fields': ('headless', 'pages_per_eo', 'test_mode', 'num_workers')
@@ -190,9 +190,18 @@ class ScraperRunAdmin(admin.ModelAdmin):
         ('Progress', {
             'fields': ('progress_percentage', 'processed_count', 'total_eo_count', 'success_count', 'failed_count', 'no_results_count', 'partial_count')
         }),
+        ('Retry Configuration', {
+            'fields': ('current_retry_pass', 'max_retry_passes', 'eo_retry_queue'),
+            'description': 'Multi-pass retry system for failed EOs'
+        }),
         ('EO Numbers', {
             'fields': ('eo_numbers_to_process', 'eo_numbers_processed', 'eo_numbers_failed', 'remaining_eo_numbers'),
             'classes': ('collapse',)
+        }),
+        ('Failure Details', {
+            'fields': ('eo_failure_details',),
+            'classes': ('collapse',),
+            'description': 'Detailed failure information per EO (zero silent failures)'
         }),
         ('Workers', {
             'fields': ('worker_task_ids',),

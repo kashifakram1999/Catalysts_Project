@@ -311,6 +311,52 @@ class ScraperRun(models.Model):
     # Error info
     error_message = models.TextField(blank=True, null=True)
 
+    # =========================================================================
+    # PLAYWRIGHT MIGRATION: Enhanced Failure Tracking (Zero Silent Failures)
+    # =========================================================================
+
+    # Engine tracking
+    engine_used = models.CharField(
+        max_length=20,
+        choices=[('selenium', 'Selenium'), ('playwright', 'Playwright')],
+        default='playwright',
+        help_text="Scraper engine used for this run"
+    )
+
+    # CRITICAL: Detailed failure tracking to eliminate silent failures
+    # Structure: {
+    #   "D-393-143": {
+    #     "attempts": 3,
+    #     "last_error": "Timeout waiting for results table",
+    #     "error_type": "page",
+    #     "failed_at_page": 5,
+    #     "timestamp": "2025-12-13T10:30:45",
+    #     "retry_history": [...]
+    #   }
+    # }
+    eo_failure_details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Detailed failure information per EO number"
+    )
+
+    # Automatic retry queue for multi-pass retry system
+    eo_retry_queue = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Queue of failed EOs to retry in next pass"
+    )
+
+    # Retry pass tracking for multi-pass retry system
+    current_retry_pass = models.IntegerField(
+        default=1,
+        help_text="Current retry pass number (1 = initial, 2+ = retry passes)"
+    )
+    max_retry_passes = models.IntegerField(
+        default=3,
+        help_text="Maximum number of retry passes for failed EOs"
+    )
+
     class Meta:
         verbose_name = "Scraper Run"
         verbose_name_plural = "Scraper Runs"

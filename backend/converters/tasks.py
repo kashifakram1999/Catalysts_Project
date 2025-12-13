@@ -20,6 +20,7 @@ SCRAPER_LOG_PREFIXES = {
     ],
     'website': [
         'converters.eo_scraper',
+        'converters.eo_scraper_playwright',  # NEW: Playwright scraper
         'converters.management.commands.scrape_by_eo',
     ],
 }
@@ -224,8 +225,12 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
     Returns:
         dict: Scraping statistics
     """
+    import os
     from converters.models import ScraperRun
-    from converters.eo_scraper import CARBEOScraper
+    from converters.eo_scraper_playwright import CARBPlaywrightScraper
+
+    # Allow sync database operations in Playwright's sync context
+    os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
     logger.info(f"Starting website scraping task {self.request.id}")
 
@@ -240,7 +245,7 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
         else:
             # We'll extract them from the website
             try:
-                scraper = CARBEOScraper(headless=True)
+                scraper = CARBPlaywrightScraper(headless=True)
                 scraper._setup_driver()
                 eo_numbers_list = scraper.extract_eo_numbers()
                 scraper._close_driver()
@@ -269,6 +274,7 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
                 test_mode=test_mode,
                 eo_numbers_to_process=eo_numbers_list,
                 total_eo_count=len(eo_numbers_list),
+                engine_used='playwright',  # NEW: Track which scraper engine was used
             )
             logger.info(f"Created new ScraperRun {scraper_run.id} for task {self.request.id}")
 
@@ -478,8 +484,12 @@ def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, 
     Returns:
         dict: Scraping statistics for this batch
     """
-    from converters.eo_scraper import CARBEOScraper
+    import os
+    from converters.eo_scraper_playwright import CARBPlaywrightScraper
     from converters.models import ScraperRun
+
+    # Allow sync database operations in Playwright's sync context
+    os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
     logger.info(f"Starting batch {batch_number}/{total_batches} with {len(eo_batch)} EO numbers")
 
@@ -516,7 +526,7 @@ def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, 
     scraper = None
     try:
         worker_logs.append(f"🔧 Initializing web scraper...")
-        scraper = CARBEOScraper(headless=headless, pages_per_eo=pages)
+        scraper = CARBPlaywrightScraper(headless=headless, pages_per_eo=pages)
         worker_logs.append(f"✅ Scraper initialized successfully")
 
         # Update progress before scraping
@@ -739,10 +749,14 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
     Returns:
         dict: Aggregated scraping statistics from all workers
     """
+    import os
     from celery import chord
-    from converters.eo_scraper import CARBEOScraper
+    from converters.eo_scraper_playwright import CARBPlaywrightScraper
     from converters.models import ScraperRun
     import math
+
+    # Allow sync database operations in Playwright's sync context
+    os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
     logger.info(f"Starting parallel scraping with {num_workers} workers")
 
@@ -762,7 +776,7 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
     # Step 1: Extract all EO numbers
     scraper = None
     try:
-        scraper = CARBEOScraper(headless=True)
+        scraper = CARBPlaywrightScraper(headless=True)
 
         if eo_numbers and eo_numbers.strip():
             # Use provided EO numbers
