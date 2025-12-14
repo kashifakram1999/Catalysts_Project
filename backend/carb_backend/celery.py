@@ -9,11 +9,27 @@ import logging
 # Set the default Django settings module
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'carb_backend.settings')
 
-# Create Celery app
-app = Celery('carb_backend')
+# Create Celery app with explicit broker and result backend
+app = Celery(
+    'carb_backend',
+    broker='redis://localhost:6379/0',
+    backend='redis://localhost:6379/1'  # Set result backend at initialization
+)
 
 # Load configuration from Django settings with CELERY_ namespace
 app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Override with explicit settings (ensure they stick)
+app.conf.update(
+    result_backend='redis://localhost:6379/1',
+    result_extended=True,
+    result_expires=3600 * 24,
+    result_serializer='json',
+    accept_content=['json'],
+    task_serializer='json',
+    task_track_started=True,
+    task_send_sent_event=True,
+)
 
 # Allow coordinator tasks to wait for subtask results (needed for parallel scraping)
 app.conf.task_allow_error_cb_on_chord_header = True

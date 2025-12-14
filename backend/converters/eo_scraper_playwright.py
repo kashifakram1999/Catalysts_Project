@@ -148,8 +148,19 @@ class CARBPlaywrightScraper:
 
     def _setup_driver(self):
         """Setup Playwright browser with optimized options"""
+        import os
+        import platform
+
+        # CRITICAL: Clean up any existing resources before setup
+        # This prevents issues when running in forked worker processes
+        if self.playwright or self.browser or self.context or self.page:
+            logger.warning("Found existing browser resources, cleaning up before setup")
+            self._close_driver()
+
         try:
+            logger.debug("Starting Playwright...")
             self.playwright = sync_playwright().start()
+            logger.debug("Playwright started successfully")
 
             # Browser launch options (similar to Selenium config)
             browser_args = [
@@ -170,27 +181,24 @@ class CARBPlaywrightScraper:
             # Force use of newer chromium headless shell when in headless mode
             # This avoids SEGV_ACCERR crash on Mac OS with chromium-1091
             if self.headless:
-                import os
-                import platform
-
                 # Get home directory
                 home = os.path.expanduser('~')
 
                 # Platform-specific executable path
+                executable_path = None
                 if platform.system() == 'Darwin':  # Mac OS
                     if platform.machine() == 'arm64':  # Apple Silicon
                         executable_path = f"{home}/Library/Caches/ms-playwright/chromium_headless_shell-1200/chrome-headless-shell-mac-arm64/chrome-headless-shell"
                     else:  # Intel Mac
                         executable_path = f"{home}/Library/Caches/ms-playwright/chromium_headless_shell-1200/chrome-headless-shell-mac/chrome-headless-shell"
-                else:
-                    # On Linux/Windows, let Playwright choose
-                    executable_path = None
 
                 if executable_path and os.path.exists(executable_path):
                     launch_options['executable_path'] = executable_path
                     logger.info(f"Using explicit headless shell: {executable_path}")
 
+            logger.debug(f"Launching browser with options: headless={self.headless}, args={len(browser_args)} args")
             self.browser = self.playwright.chromium.launch(**launch_options)
+            logger.debug("Browser launched successfully")
 
             # Create context with options
             self.context = self.browser.new_context(
@@ -198,20 +206,18 @@ class CARBPlaywrightScraper:
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
 
-            # PERFORMANCE OPTIMIZATION: Block unnecessary resources
-            # This speeds up page loads by 20-30%
-            self.context.route("**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2,ttf}",
-                              lambda route: route.abort())
-
             self.page = self.context.new_page()
             self.page.set_default_timeout(PAGE_LOAD_TIMEOUT)
 
             logger.info("Playwright browser initialized successfully")
 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             logger.error(f"Failed to initialize Playwright browser: {e}")
+            logger.error(f"Full error details:\n{error_details}")
             self._close_driver()  # Clean up partial initialization
-            raise
+            raise RuntimeError(f"Playwright initialization failed: {e}") from e
 
     def _close_driver(self):
         """Close Playwright browser safely"""
@@ -424,22 +430,88 @@ class CARBPlaywrightScraper:
             True if tab is active, False otherwise
         """
         timeout_ms = timeout or self.timeout
+        dropdown_selector = "#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_btnARBEONumbers"
 
+        # Dismiss common banners/modals that may block clicks
         try:
-            # Click EO Search tab
-            self.page.locator("text=EO Search").click(timeout=timeout_ms)
-            time.sleep(2)
+            for label in ["Accept", "I Agree", "OK", "Got it", "Close"]:
+                btn = self.page.get_by_role("button", name=label, exact=False)
+                if btn.count() > 0 and btn.first.is_visible():
+                    btn.first.click(timeout=1000)
+                    self.page.wait_for_timeout(500)
+        except Exception:
+            pass
 
-            # Verify tab content loaded
-            self.page.wait_for_selector(
-                "#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_btnARBEONumbers",
-                timeout=timeout_ms
+        # If dropdown already visible, we're on the right tab
+        try:
+            if self.page.locator(dropdown_selector).first.is_visible():
+                return True
+        except Exception:
+            pass
+
+        # Try multiple selectors to activate EO Search tab (markup changes often)
+        possible_selectors = [
+            "text=EO Search",
+            "button:has-text(\"EO Search\")",
+            "a:has-text(\"EO Search\")",
+            "role=tab[name='EO Search']",
+            "#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_btnARBEONumbersTab",
+            "#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_lnkEO",
+        ]
+
+        for selector in possible_selectors:
+            try:
+                locator = self.page.locator(selector)
+                if locator.count() == 0:
+                    continue
+                locator.first.click(timeout=timeout_ms, force=True)
+                self.page.wait_for_timeout(1500)
+                # Verify dropdown shows up
+                self.page.wait_for_selector(dropdown_selector, timeout=timeout_ms)
+                logger.debug(f"EO Search tab activated via selector: {selector}")
+                return True
+            except Exception as e:
+                logger.debug(f"EO tab selector failed ({selector}): {e}")
+                continue
+
+        # Absolute fallback: click via text search using JS
+        try:
+            clicked = self.page.evaluate(
+                """
+                () => {
+                    const el = Array.from(document.querySelectorAll('*'))
+                        .find(n => (n.innerText || '').toLowerCase().includes('eo search'));
+                    if (el) { el.click(); return true; }
+                    return false;
+                }
+                """
             )
-            logger.debug("EO Search tab is active")
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to activate EO Search tab: {e}")
-            return False
+            if clicked:
+                self.page.wait_for_timeout(1500)
+                self.page.wait_for_selector(dropdown_selector, timeout=timeout_ms)
+                logger.debug("EO Search tab activated via JS fallback")
+                return True
+        except Exception:
+            pass
+
+        # Force-show EO Search container if present
+        try:
+            self.page.evaluate(
+                """
+                () => {
+                    const panel = document.querySelector('#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch');
+                    if (panel) { panel.style.display = 'block'; panel.style.visibility = 'visible'; }
+                }
+                """
+            )
+            if self.page.locator(dropdown_selector).count() > 0:
+                logger.debug("EO Search panel force-shown via JS")
+                return True
+        except Exception:
+            pass
+
+        logger.warning("Failed to activate EO Search tab after trying all selectors")
+        return False
 
     # =========================================================================
     # EO NUMBER EXTRACTION
@@ -469,10 +541,10 @@ class CARBPlaywrightScraper:
             self.page.goto(self.BASE_URL, wait_until='networkidle', timeout=PAGE_LOAD_TIMEOUT)
             time.sleep(3)
 
-            # Click on "EO Search" tab
+            # Click on "EO Search" tab (robust selector handling)
             logger.info("Clicking EO Search tab...")
-            self.page.locator("text=EO Search").click()
-            time.sleep(3)
+            if not self._wait_for_eo_search_tab_active(timeout=POSTBACK_WAIT_TIMEOUT):
+                raise RuntimeError("Unable to activate EO Search tab")
 
             # Click on EO dropdown button
             logger.info("Opening EO dropdown...")
@@ -530,13 +602,33 @@ class CARBPlaywrightScraper:
         try:
             logger.info(f"Searching for EO: {eo_number}")
 
-            # Ensure we're on EO Search tab
-            if not self._wait_for_eo_search_tab_active(timeout=15000):
-                return {'status': 'error', 'error': 'Failed to activate EO Search tab'}
+            # Ensure we're on EO Search tab (retry once after reload if needed)
+            tab_ready = False
+            for attempt in range(2):
+                if self._wait_for_eo_search_tab_active(timeout=POSTBACK_WAIT_TIMEOUT):
+                    tab_ready = True
+                    break
+                logger.info("EO Search tab not active, reloading page and retrying...")
+                self.page.goto(self.BASE_URL, wait_until='networkidle', timeout=PAGE_LOAD_TIMEOUT)
+                self.page.wait_for_timeout(2000)
+
+            if not tab_ready:
+                logger.warning("Proceeding without confirmed EO Search tab; selectors may fail downstream")
 
             # Click EO dropdown
             dropdown_btn = "#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_btnARBEONumbers"
-            self.page.locator(dropdown_btn).click(timeout=DEFAULT_WAIT_TIMEOUT)
+            try:
+                self.page.locator(dropdown_btn).click(timeout=DEFAULT_WAIT_TIMEOUT, force=True)
+            except Exception:
+                logger.warning("EO dropdown click failed; refreshing page and retrying dropdown once")
+                self.page.goto(self.BASE_URL, wait_until='networkidle', timeout=PAGE_LOAD_TIMEOUT)
+                if not self._wait_for_eo_search_tab_active(timeout=POSTBACK_WAIT_TIMEOUT):
+                    return {'status': 'error', 'error': 'Failed to activate EO Search tab'}
+                self.page.locator(dropdown_btn).click(timeout=DEFAULT_WAIT_TIMEOUT, force=True)
+            try:
+                logger.debug(f"EO dropdown count={self.page.locator(dropdown_btn).count()}, visible={self.page.locator(dropdown_btn).first.is_visible() if self.page.locator(dropdown_btn).count() else 'N/A'}")
+            except Exception:
+                pass
             time.sleep(1)
 
             # Find and click the specific EO link
@@ -569,12 +661,24 @@ class CARBPlaywrightScraper:
             # Return to EO Search tab after postback
             logger.info("Returning to EO Search tab after postback...")
             if not self._wait_for_eo_search_tab_active(timeout=POSTBACK_WAIT_TIMEOUT):
-                return {'status': 'error', 'error': 'Failed to return to EO Search tab'}
+                logger.warning("Could not confirm EO Search tab after postback; attempting to continue anyway")
 
             # Click the EO Search button
             logger.info(f"Clicking Search button for {eo_number}")
             search_btn = "#ctl00_ctl00_MainContent_ARBDBBodyContent_UCEOSearch_btnEOSearch"
-            self.page.locator(search_btn).click(timeout=DEFAULT_WAIT_TIMEOUT)
+            search_locator = self.page.locator(search_btn)
+            try:
+                logger.debug(f"Search button count={search_locator.count()}, visible={search_locator.first.is_visible() if search_locator.count() else 'N/A'}")
+            except Exception:
+                pass
+
+            if search_locator.count() == 0:
+                return {'status': 'error', 'error': 'Search button not found after postback'}
+
+            search_locator.first.click(timeout=POSTBACK_WAIT_TIMEOUT, force=True)
+            # Give the page time to process the search postback
+            self.page.wait_for_load_state('networkidle', timeout=POSTBACK_WAIT_TIMEOUT)
+            self.page.wait_for_timeout(2000)
 
             # Wait for results
             time.sleep(5)

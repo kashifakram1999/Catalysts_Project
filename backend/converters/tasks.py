@@ -737,7 +737,7 @@ def aggregate_parallel_results(self, batch_results):
 )
 def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_mode=False, eo_numbers=None):
     """
-    Coordinate parallel scraping across multiple workers using Celery chord
+    Coordinate parallel scraping across multiple workers using group (NOT chord - better for thread pool)
 
     Args:
         num_workers (int): Number of parallel workers (default: 4)
@@ -750,15 +750,16 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
         dict: Aggregated scraping statistics from all workers
     """
     import os
-    from celery import chord
+    from celery import group
     from converters.eo_scraper_playwright import CARBPlaywrightScraper
     from converters.models import ScraperRun
     import math
+    import time
 
     # Allow sync database operations in Playwright's sync context
     os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
 
-    logger.info(f"Starting parallel scraping with {num_workers} workers")
+    logger.info(f"Starting parallel scraping with {num_workers} workers (using group, not chord)")
 
     scraper_run = None
 
@@ -901,14 +902,12 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
 
         logger.info(f"Generated worker task IDs: {worker_task_ids}")
 
-        # Create the chord with callback
-        callback = aggregate_parallel_results.s()
-        chord_task = chord(worker_tasks)(callback)
+        # Create a group and launch workers (no chord - better for thread pool)
+        job = group(worker_tasks)
+        group_result = job.apply_async()
 
-        # The chord callback task ID
-        chord_id = chord_task.id
-
-        logger.info(f"Chord created - Callback ID: {chord_id}, Worker count: {len(worker_task_ids)}")
+        logger.info(f"Group created - Worker count: {len(worker_task_ids)}")
+        logger.info(f"Workers launched: {worker_task_ids}")
 
         # Update state
         self.update_state(
@@ -920,7 +919,7 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
                 'num_workers': num_workers,
                 'total_eos': len(all_eo_numbers),
                 'batches': len(batches),
-                'chord_id': chord_id,
+                'group_id': group_result.id,
                 'worker_task_ids': worker_task_ids,
             }
         )
@@ -929,7 +928,7 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
         cache_key = f'parallel_scrape_{self.request.id}'
         cache_data = {
             'parent_task_id': self.request.id,
-            'chord_id': chord_id,
+            'group_id': group_result.id,
             'num_workers': len(batches),
             'total_eos': len(all_eo_numbers),
             'worker_task_ids': worker_task_ids,
@@ -937,21 +936,83 @@ def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_m
         }
         cache.set(cache_key, cache_data, timeout=3600 * 6)  # 6 hours
 
-        logger.info(f"Parallel scraping launched with {len(batches)} workers. Chord callback ID: {chord_id}, Worker IDs: {len(worker_task_ids)} captured")
-        logger.info(f"Cache stored at key: {cache_key} with {len(worker_task_ids)} worker IDs")
-
         # Store the worker task IDs in ScraperRun for tracking
         if scraper_run:
             scraper_run.worker_task_ids = worker_task_ids
             scraper_run.save(update_fields=['worker_task_ids', 'updated_at'])
 
-        # Return the chord result ID so progress can be monitored
+        # Wait for all workers to complete and collect results
+        logger.info(f"Waiting for {len(worker_tasks)} workers to complete...")
+
+        # Wait for results (with timeout - 20 hours)
+        batch_results = []
+        completed_count = 0
+        failed_count = 0
+
+        for i, async_result in enumerate(group_result.results):
+            try:
+                self.update_state(
+                    state='PROGRESS',
+                    meta={
+                        'current': 20 + int((completed_count / len(worker_tasks)) * 70),
+                        'total': 100,
+                        'status': f'Worker {i+1}/{len(worker_tasks)} in progress... ({completed_count} completed)',
+                        'completed_workers': completed_count,
+                        'failed_workers': failed_count,
+                        'total_workers': len(worker_tasks),
+                    }
+                )
+
+                # Wait for this worker with timeout (20 hours)
+                result = async_result.get(timeout=20 * 3600)
+                batch_results.append(result)
+                completed_count += 1
+                logger.info(f"Worker {i+1}/{len(worker_tasks)} completed successfully")
+
+            except Exception as e:
+                logger.error(f"Worker {i+1}/{len(worker_tasks)} failed: {e}")
+                failed_count += 1
+                batch_results.append({
+                    'status': 'error',
+                    'error': str(e),
+                    'worker_number': i + 1
+                })
+
+        # Aggregate results from all workers
+        logger.info(f"Aggregating results from {len(batch_results)} workers...")
+
+        total_stats = {
+            'success_count': 0,
+            'failed_count': 0,
+            'no_results_count': 0,
+            'partial_count': 0,
+            'converters_created': 0,
+            'converters_updated': 0,
+        }
+
+        for result in batch_results:
+            if result and result.get('status') != 'error':
+                stats = result.get('stats', {})
+                total_stats['success_count'] += stats.get('success_count', 0)
+                total_stats['failed_count'] += stats.get('failed_count', 0)
+                total_stats['no_results_count'] += stats.get('no_results_count', 0)
+                total_stats['partial_count'] += stats.get('partial_count', 0)
+                total_stats['converters_created'] += stats.get('converters_created', 0)
+                total_stats['converters_updated'] += stats.get('converters_updated', 0)
+
+        # Mark ScraperRun as completed
+        if scraper_run:
+            scraper_run.mark_completed()
+            logger.info(f"Marked ScraperRun {scraper_run.id} as completed")
+
+        logger.info(f"Parallel scraping completed. Total stats: {total_stats}")
+
         return {
-            'status': 'processing',
-            'message': f'Parallel scraping started with {len(batches)} workers',
-            'num_workers': len(batches),
-            'total_eos': len(all_eo_numbers),
-            'chord_id': chord_id,
+            'status': 'completed',
+            'num_workers': len(batch_results),
+            'completed_workers': completed_count,
+            'failed_workers': failed_count,
+            'stats': total_stats,
         }
 
     except Exception as e:

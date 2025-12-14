@@ -1,9 +1,9 @@
 """
-Django management command to scrape CARB data using EO number search
+Django management command to scrape CARB data using EO number search (Playwright)
 """
 
 from django.core.management.base import BaseCommand
-from converters.eo_scraper import CARBEOScraper
+from converters.eo_scraper_playwright import CARBPlaywrightScraper
 import logging
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class Command(BaseCommand):
         eo_numbers_arg = options['eo_numbers']
 
         self.stdout.write("=" * 70)
-        self.stdout.write(self.style.SUCCESS("CARB EO-Based Website Scraper"))
+        self.stdout.write(self.style.SUCCESS("CARB EO-Based Website Scraper (Playwright)"))
         self.stdout.write("=" * 70)
         if pages:
             self.stdout.write(f"Pages per EO: {pages} (safety limit)")
@@ -69,15 +69,15 @@ class Command(BaseCommand):
             self.stdout.write(f"Specific EO numbers: {eo_numbers_arg}")
         self.stdout.write("")
 
-        # Initialize scraper
-        scraper = CARBEOScraper(
+        # Initialize Playwright scraper
+        scraper = CARBPlaywrightScraper(
             headless=headless,
             timeout=timeout,
             pages_per_eo=pages
         )
 
         try:
-            # Setup driver
+            # Setup driver (Playwright)
             scraper._setup_driver()
 
             # Determine which EO numbers to scrape
@@ -110,23 +110,25 @@ class Command(BaseCommand):
 
             stats = scraper.scrape_by_eo_numbers(eo_numbers)
 
-            # Display results
+            # Display results (maintain legacy wording so Celery parser still works)
+            total_converters = stats.get('converters_created', 0) + stats.get('converters_updated', 0)
             self.stdout.write("")
             self.stdout.write("=" * 70)
             self.stdout.write(self.style.SUCCESS("SCRAPING COMPLETE"))
             self.stdout.write("=" * 70)
-            self.stdout.write(f"Total EOs processed: {stats['total_eos']}")
-            self.stdout.write(f"Successful: {stats['successful_eos']}")
-            self.stdout.write(f"Failed: {stats['failed_eos']}")
-            self.stdout.write(f"Total converters found: {stats['total_converters']}")
+            self.stdout.write(f"Total EOs processed: {stats.get('total_eo_count', 0)}")
+            self.stdout.write(f"Successful: {stats.get('success_count', 0)}")
+            self.stdout.write(f"Failed: {stats.get('failed_count', 0)}")
+            self.stdout.write(f"Total converters found: {total_converters}")
             self.stdout.write("")
-            self.stdout.write(self.style.SUCCESS(f"✓ Created: {stats['created']} new records"))
-            self.stdout.write(self.style.SUCCESS(f"✓ Updated: {stats['updated']} existing records"))
+            self.stdout.write(self.style.SUCCESS(f"✓ Created: {stats.get('converters_created', 0)} new records"))
+            self.stdout.write(self.style.SUCCESS(f"✓ Updated: {stats.get('converters_updated', 0)} existing records"))
             self.stdout.write("")
 
             # Calculate coverage percentage
-            if stats['total_eos'] > 0:
-                success_rate = (stats['successful_eos'] / stats['total_eos']) * 100
+            total_eos = stats.get('total_eo_count', 0)
+            if total_eos > 0:
+                success_rate = (stats.get('success_count', 0) / total_eos) * 100
                 self.stdout.write(f"Success rate: {success_rate:.1f}%")
 
         except Exception as e:

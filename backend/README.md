@@ -1,6 +1,6 @@
 # Backend Service (Django)
 
-This directory hosts the Django 5 project that exposes the CARB catalytic converter API and blog CMS used by the frontend app. It ships with a SQLite database by default, but any Django-supported database can be configured through the standard `DATABASES` setting.
+This directory hosts the Django backend that exposes the CARB catalytic converter API and blog CMS used by the frontend app. It now targets PostgreSQL for all environments via `DB_*` environment variables.
 
 ## Features
 
@@ -13,10 +13,10 @@ This directory hosts the Django 5 project that exposes the CARB catalytic conver
 ## Tech Stack
 
 - Python 3.12+
-- Django 5.0.1
+- Django 4.2 LTS
 - Django REST Framework 3.14
 - django-ckeditor 6.7
-- SQLite (development default)
+- PostgreSQL (development and production)
 
 ## Getting Started
 
@@ -34,19 +34,29 @@ This directory hosts the Django 5 project that exposes the CARB catalytic conver
    pip install -r requirements.txt
    ```
 
-3. **Apply migrations**:
+3. **Configure PostgreSQL** by setting the following environment variables (create a `.env` file if you use `python-decouple`):
+
+   ```bash
+   DB_NAME=carb_db
+   DB_USER=postgres
+   DB_PASSWORD=your_password
+   DB_HOST=127.0.0.1
+   DB_PORT=5432
+   ```
+
+4. **Apply migrations**:
 
    ```bash
    python manage.py migrate
    ```
 
-4. **Create a superuser** so you can access the Django admin and publish blogs:
+5. **Create a superuser** so you can access the Django admin and publish blogs:
 
    ```bash
    python manage.py createsuperuser
    ```
 
-5. **Run the development server**:
+6. **Run the development server**:
 
    ```bash
    python manage.py runserver
@@ -115,6 +125,7 @@ Key settings live in `carb_backend/settings.py`:
 - `CORS_ALLOWED_ORIGINS` – extend to any additional frontend origins.
 - `REST_FRAMEWORK` – pagination defaults (`PAGE_SIZE = 25`).
 - `MEDIA_URL` / `MEDIA_ROOT` – adjust when serving media via CDN or S3.
+- `DB_*` – configure PostgreSQL connection (name, user, password, host, port).
 
 For production, remember to set `DEBUG = False` and configure a secure secret key through environment variables.
 
