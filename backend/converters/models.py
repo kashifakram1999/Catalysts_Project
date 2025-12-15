@@ -362,3 +362,67 @@ class ScraperRun(models.Model):
         """Request this scraper run to stop"""
         self.stop_requested = True
         self.save(update_fields=['stop_requested', 'updated_at'])
+
+
+class EOProgress(models.Model):
+    """Persist EO-level pagination progress so scrapes can resume safely"""
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('partial', 'Partial'),
+        ('success', 'Success'),
+        ('failed', 'Failed'),
+    ]
+
+    eo_number = models.CharField(max_length=50, unique=True, db_index=True)
+    last_page = models.IntegerField(default=0, help_text="Last successfully scraped page for this EO")
+    expected_pages = models.IntegerField(null=True, blank=True)
+    expected_rows = models.IntegerField(null=True, blank=True)
+    scraped_rows = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    last_error = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['eo_number']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['eo_number', 'status']),
+        ]
+        verbose_name = "EO Progress"
+        verbose_name_plural = "EO Progress Records"
+
+    def mark_success(self, expected_pages=None, expected_rows=None):
+        self.status = 'success'
+        if expected_pages is not None:
+            self.expected_pages = expected_pages
+        if expected_rows is not None:
+            self.expected_rows = expected_rows
+        self.last_error = None
+        self.save(update_fields=['status', 'expected_pages', 'expected_rows', 'last_error', 'updated_at'])
+
+    def mark_partial(self, last_page, scraped_rows, error_msg=None, expected_pages=None, expected_rows=None):
+        self.status = 'partial'
+        self.last_page = last_page
+        self.scraped_rows = scraped_rows
+        if expected_pages is not None:
+            self.expected_pages = expected_pages
+        if expected_rows is not None:
+            self.expected_rows = expected_rows
+        if error_msg:
+            self.last_error = error_msg
+        self.save(update_fields=[
+            'status',
+            'last_page',
+            'scraped_rows',
+            'expected_pages',
+            'expected_rows',
+            'last_error',
+            'updated_at',
+        ])
+
+    def mark_failed(self, error_msg):
+        self.status = 'failed'
+        self.last_error = error_msg
+        self.save(update_fields=['status', 'last_error', 'updated_at'])

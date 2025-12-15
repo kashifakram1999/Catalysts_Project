@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.admin import AdminSite
 from django.urls import path
 from django.utils.html import format_html
-from .models import Manufacturer, CatalyticConverter, BlogPost, ScraperRun
+from .models import Manufacturer, CatalyticConverter, BlogPost, ScraperRun, EOProgress
 from . import admin_views
 
 
@@ -206,3 +206,12 @@ class ScraperRunAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+@admin.register(EOProgress, site=admin_site)
+class EOProgressAdmin(admin.ModelAdmin):
+    list_display = ['eo_number', 'status', 'last_page', 'scraped_rows', 'expected_pages', 'expected_rows', 'updated_at']
+    list_filter = ['status']
+    search_fields = ['eo_number']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['eo_number']
