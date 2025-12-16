@@ -349,6 +349,9 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
         if eo_numbers:
             cmd_args.append(f'--eo-numbers={eo_numbers}')
 
+        if scraper_run:
+            cmd_args.append(f'--scraper-run-id={scraper_run.id}')
+
         # Update progress
         self.update_state(
             state='PROGRESS',

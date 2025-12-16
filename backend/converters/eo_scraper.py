@@ -258,7 +258,13 @@ class CARBEOScraper:
             return
 
         grid = self._find_results_table(soup)
-        anchor_source = grid.find_all("a", href=True) if grid else soup.find_all("a", href=True)
+        anchor_source = []
+        if grid:
+            pager_row = self._pager_row(grid)
+            if pager_row:
+                anchor_source = pager_row.find_all("a", href=True)
+        if not anchor_source:
+            anchor_source = soup.find_all("a", href=True)
 
         for anchor in anchor_source:
             match = POSTBACK_REGEX.search(anchor["href"])
@@ -269,10 +275,28 @@ class CARBEOScraper:
                 self.pagination_target = match.group("target")
                 return
 
+    def _pager_row(self, table: BeautifulSoup) -> Optional[BeautifulSoup]:
+        """Locate the pager row within the results table."""
+        rows = table.find_all("tr")
+        for row in reversed(rows):
+            if row.find("a") or row.find("span"):
+                # Heuristic: row that contains numeric pager buttons/ellipsis
+                texts = [t.strip() for t in row.stripped_strings]
+                if any(t.isdigit() or "..." in t for t in texts):
+                    return row
+        return None
+
     def _max_visible_page(self, soup: BeautifulSoup) -> Optional[int]:
-        """Return the highest page number currently rendered."""
+        """Return the highest page number currently rendered (pager row only)."""
+        table = self._find_results_table(soup)
+        if not table:
+            return None
+        pager = self._pager_row(table)
+        if not pager:
+            return None
+
         page_numbers: List[int] = []
-        for element in soup.find_all(["a", "span"]):
+        for element in pager.find_all(["a", "span"]):
             text = (element.get_text() or "").strip()
             if text.isdigit():
                 try:
@@ -283,14 +307,30 @@ class CARBEOScraper:
 
     def _current_page(self, soup: BeautifulSoup) -> int:
         """Detect the current page number from the pagination footer."""
-        for element in soup.find_all(["span", "td"]):
-            text = (element.get_text() or "").strip()
-            if text.isdigit():
-                try:
-                    return int(text)
-                except ValueError:
-                    continue
+        table = self._find_results_table(soup)
+        if table:
+            pager = self._pager_row(table)
+            if pager:
+                for element in pager.find_all("span"):
+                    text = (element.get_text() or "").strip()
+                    if text.isdigit():
+                        try:
+                            return int(text)
+                        except ValueError:
+                            continue
         return 1
+
+    def _clamp_pages(self, current_page: int, visible_page: Optional[int]) -> int:
+        """
+        Clamp unreasonable pager numbers to avoid bogus large values.
+        Allows a generous window of +1000 pages over current.
+        """
+        if not visible_page:
+            return current_page
+        if visible_page > current_page + 1000:
+            logger.warning(f"[DEBUG] Clamping visible page {visible_page} to {current_page} (suspiciously high)")
+            return current_page
+        return visible_page
 
     def _next_page_argument(self, soup: BeautifulSoup, current_page: int) -> Optional[str]:
         """
@@ -299,7 +339,13 @@ class CARBEOScraper:
         """
         next_page = current_page + 1
         grid = self._find_results_table(soup)
-        anchor_source = grid.find_all("a", href=True) if grid else soup.find_all("a", href=True)
+        anchor_source = []
+        if grid:
+            pager_row = self._pager_row(grid)
+            if pager_row:
+                anchor_source = pager_row.find_all("a", href=True)
+        if not anchor_source:
+            anchor_source = soup.find_all("a", href=True)
 
         for anchor in anchor_source:
             href = anchor["href"]
@@ -694,6 +740,7 @@ class CARBEOScraper:
     def _submit_search(self, soup: BeautifulSoup) -> Optional[BeautifulSoup]:
         """Click the search button through an HTTP POST."""
         button = None
+        candidates = []
         for candidate in soup.find_all(["input", "button", "a"]):
             cid = candidate.get("id", "")
             cname = candidate.get("name", "")
@@ -701,8 +748,10 @@ class CARBEOScraper:
             if SEARCH_BUTTON_FRAGMENT in cid or SEARCH_BUTTON_FRAGMENT in cname or SEARCH_BUTTON_FRAGMENT in href:
                 button = candidate
                 break
+            candidates.append((cid, cname, href))
         if not button:
-            logger.warning("Search button not found in DOM")
+            logger.warning(f"Search button not found in DOM; candidates={candidates[:5]}")
+            self._dump_debug_html("unknown", "search_button_missing", soup)
             return None
 
         # If anchor with __doPostBack, use target/argument
@@ -740,8 +789,14 @@ class CARBEOScraper:
         self.pagination_target = None
         self.results_table_id = RESULTS_TABLE_ID
         resume_page = start_page
+        # Prefer persisted EOProgress resume state
         if progress.status in ("partial", "failed") and progress.last_page >= 1:
             resume_page = max(start_page, progress.last_page + 1)
+        logger.info(
+            f"[DEBUG] Resume info for {eo_number}: start_page={start_page}, "
+            f"eo_progress_last_page={progress.last_page}, eo_progress_status={progress.status}, "
+            f"computed_resume_page={resume_page}"
+        )
 
         try:
             soup = self._request("GET", description="load base page")
@@ -788,33 +843,85 @@ class CARBEOScraper:
             logger.info(f"[DEBUG] Results table detected with id={table.get('id')}")
 
         self._derive_pagination_target(soup)
+        logger.info(f"[DEBUG] Pagination target={self.pagination_target}, current_page={self._current_page(soup)}, max_visible={self._max_visible_page(soup)}")
 
         # Jump directly to resume page if needed
         current_page = 1
         if resume_page > 1:
-            logger.info(f"Resuming EO {eo_number} by iterating to page {resume_page}")
-            target_reached = True
-            for step_page in range(2, resume_page + 1):
-                next_arg = self._next_page_argument(soup, step_page - 1)
-                if next_arg:
-                    soup = self._goto_page(soup, step_page)
-                else:
-                    soup = self._goto_page(soup, step_page)
-                if not soup or self._is_error_page(soup):
-                    logger.warning(f"Failed to reach resume page {step_page} (resume target {resume_page}) for EO {eo_number}")
-                    target_reached = False
-                    break
-                current_page = step_page
-                if step_page % 20 == 0:
-                    time.sleep(1)  # brief pause to be gentle during deep resume
-            if not target_reached:
-                logger.warning(f"Resume iteration halted before page {resume_page}; continuing from page {current_page}")
+            logger.info(f"Resuming EO {eo_number}; attempting fast-forward to page {resume_page}")
+            current_page = self._current_page(soup)
+
+            # First try a single direct jump to the resume page
+            direct_jump = self._goto_page(soup, resume_page)
+            if direct_jump and not self._is_error_page(direct_jump):
+                soup = direct_jump
+                current_page = self._current_page(soup) or resume_page
+                logger.info(f"[DEBUG] Direct resume jump landed on page {current_page} for EO {eo_number} (max_visible={self._max_visible_page(soup)})")
+            else:
+                logger.warning(f"[DEBUG] Direct resume jump to page {resume_page} failed; falling back to incremental fast-forward")
+
+            def fast_forward(soup_obj, current, target):
+                """Use visible pager jumps to reduce one-by-one navigation."""
+                attempts = 0
+                while current < target and attempts < 200:
+                    if self._stop_requested(scraper_run_id):
+                        logger.info(f"Stop requested during fast-forward at page {current} for EO {eo_number}")
+                        progress.mark_partial(
+                            last_page=current - 1 if current > 1 else 0,
+                            scraped_rows=0,
+                            error_msg="stop requested",
+                            expected_pages=None,
+                            expected_rows=None,
+                        )
+                        return soup_obj, current, True
+                    attempts += 1
+                    max_visible = self._max_visible_page(soup_obj) or current
+                    logger.info(f"[DEBUG] Fast-forward state: current={current}, target={target}, max_visible={max_visible}")
+                    # If target is within visible range, jump straight
+                    if target <= max_visible:
+                        next_page = target
+                    else:
+                        # jump to the last visible page to advance blocks
+                        next_page = max_visible
+                        if next_page == current:
+                            next_page = current + 1
+
+                    soup_next = self._goto_page(soup_obj, next_page)
+                    if soup_next:
+                        logger.info(f"[DEBUG] Jumped to page {next_page}; current_page_detected={self._current_page(soup_next)}, max_visible={self._max_visible_page(soup_next)}")
+                    if not soup_next or self._is_error_page(soup_next):
+                        logger.warning(f"Fast-forward jump to page {next_page} failed (current {current}, target {target})")
+                        return soup_obj, current, False
+
+                    current = self._current_page(soup_next) or next_page
+                    max_visible_now = self._clamp_pages(current, self._max_visible_page(soup_next))
+                    soup_obj = soup_next
+                    if current % 50 == 0:
+                        time.sleep(1)
+                    else:
+                        time.sleep(0.2)
+
+                return soup_obj, current, False
+
+            soup, current_page, stopped_ff = fast_forward(soup, current_page, resume_page)
+            if stopped_ff:
+                return {
+                    "status": "stopped",
+                    "created": 0,
+                    "updated": 0,
+                    "skipped_duplicates": 0,
+                    "scraped_rows": 0,
+                    "expected_pages": progress.expected_pages,
+                    "expected_rows": progress.expected_rows,
+                }
+            if current_page < resume_page:
+                logger.warning(f"Fast-forward could not reach resume page {resume_page}; continuing from page {current_page}")
 
         total_created = 0
         total_updated = 0
         total_rows_seen = 0
         total_skipped = 0
-        max_page_seen = self._max_visible_page(soup) or current_page
+        max_page_seen = self._clamp_pages(current_page, self._max_visible_page(soup)) or current_page
         rows_per_page = None
 
         while True:
@@ -862,7 +969,7 @@ class CARBEOScraper:
             total_updated += page_result.updated
             total_rows_seen += page_result.attempted
             total_skipped += page_result.skipped
-            max_page_seen = max(max_page_seen or current_page, self._max_visible_page(soup) or current_page)
+            max_page_seen = self._clamp_pages(current_page, max(max_page_seen or current_page, self._max_visible_page(soup) or current_page))
 
             progress.last_page = current_page
             progress.scraped_rows = total_rows_seen
@@ -896,6 +1003,13 @@ class CARBEOScraper:
 
             next_argument = self._next_page_argument(soup, current_page)
             if not next_argument:
+                # No next link visible; treat current page as the last page we know
+                max_page_seen = max(
+                    max_page_seen or 1,
+                    self._max_visible_page(soup) or current_page,
+                    current_page,
+                )
+                progress.expected_pages = max_page_seen
                 break
 
             next_page = current_page + 1
