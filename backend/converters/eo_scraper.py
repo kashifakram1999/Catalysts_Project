@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -88,7 +89,7 @@ class CARBEOScraper:
     # ------------------------------------------------------------------ #
     # HTTP helpers                                                       #
     # ------------------------------------------------------------------ #
-    def _request(self, method: str, data: Optional[Dict] = None, description: str = "") -> BeautifulSoup:
+    def _request(self, method: str, data: Optional[Dict] = None, description: str = "", url: Optional[str] = None) -> BeautifulSoup:
         """Perform a request with retries and return BeautifulSoup."""
         if not self.session:
             self._setup_driver()
@@ -96,7 +97,8 @@ class CARBEOScraper:
         last_exc: Optional[Exception] = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                resp = self.session.request(method, self.BASE_URL, data=data, timeout=self.timeout)
+                target_url = url or self.BASE_URL
+                resp = self.session.request(method, target_url, data=data, timeout=self.timeout)
                 resp.raise_for_status()
                 self._last_response_status = resp.status_code
                 self._last_response_snippet = (resp.text or "")[:300]
@@ -155,7 +157,11 @@ class CARBEOScraper:
         if extra_fields:
             payload.update(extra_fields)
 
-        return self._request("POST", data=payload, description=description)
+        form = soup.find("form")
+        action = form.get("action") if form else None
+        target_url = urljoin(self.BASE_URL, action) if action else self.BASE_URL
+
+        return self._request("POST", data=payload, description=description, url=target_url)
 
     def _activate_eo_tab(self, soup: BeautifulSoup) -> BeautifulSoup:
         """Ensure the EO Search tab is active."""
@@ -347,6 +353,42 @@ class CARBEOScraper:
             self.results_table_id = candidates[0].get("id") or self.results_table_id
             return candidates[0]
         return None
+
+    def _is_error_page(self, soup: BeautifulSoup) -> bool:
+        """Detect the CARB error page."""
+        text = soup.get_text(" ", strip=True).lower()
+        if "an error has occurred" in text or "unexpected error occurred" in text:
+            return True
+        form = soup.find("form")
+        action = form.get("action", "") if form else ""
+        return "error.aspx" in action.lower()
+
+    def _recover_page(self, eo_number: str, target_page: int) -> Optional[BeautifulSoup]:
+        """Attempt to recover from an error page by reloading the session and returning to the target page."""
+        logger.warning(f"[DEBUG] Attempting recovery for EO {eo_number} page {target_page}")
+        try:
+            self._close_driver()
+            time.sleep(1)
+            self._setup_driver()
+            soup = self._request("GET", description="recover load base page")
+            soup = self._activate_eo_tab(soup)
+            soup = self._select_eo(soup, eo_number)
+            if not soup:
+                return None
+            soup = self._activate_eo_tab(soup)
+            soup = self._submit_search(soup)
+            if not soup:
+                return None
+            table = self._find_results_table(soup)
+            if not table:
+                return None
+            self._derive_pagination_target(soup)
+            if target_page > 1:
+                soup = self._goto_page(soup, target_page)
+            return soup
+        except Exception as exc:
+            logger.warning(f"[DEBUG] Recovery failed for EO {eo_number} page {target_page}: {exc}")
+            return None
 
     def _parse_table_rows(self, soup: BeautifulSoup, eo_number: str) -> List[Dict]:
         """Convert the results table into a list of converter dictionaries."""
@@ -629,7 +671,10 @@ class CARBEOScraper:
                 payload[select.get("name") or select.get("id") or ""] = value
             logger.info(f"Selecting EO {eo_number} via <select> postback target={payload.get('__EVENTTARGET')}")
             try:
-                return self._request("POST", data=payload, description=f"select EO {eo_number} (select)")
+                form = soup.find("form")
+                action = form.get("action") if form else None
+                target_url = urljoin(self.BASE_URL, action) if action else self.BASE_URL
+                return self._request("POST", data=payload, description=f"select EO {eo_number} (select)", url=target_url)
             except Exception as exc:
                 logger.warning(f"Select-based EO selection failed for {eo_number}: {exc}")
 
@@ -676,7 +721,10 @@ class CARBEOScraper:
             payload["__EVENTARGUMENT"] = ""
             if button_name:
                 payload[button_name] = button_value
-            return self._request("POST", data=payload, description="submit EO search (button)")
+            form = soup.find("form")
+            action = form.get("action") if form else None
+            target_url = urljoin(self.BASE_URL, action) if action else self.BASE_URL
+            return self._request("POST", data=payload, description="submit EO search (button)", url=target_url)
         except Exception as exc:
             logger.error(f"Search postback failed: {exc}")
             return None
@@ -744,13 +792,23 @@ class CARBEOScraper:
         # Jump directly to resume page if needed
         current_page = 1
         if resume_page > 1:
-            resume_soup = self._goto_page(soup, resume_page)
-            if resume_soup:
-                soup = resume_soup
-                current_page = resume_page
-                logger.info(f"Resuming EO {eo_number} from page {resume_page}")
-            else:
-                logger.warning(f"Resume to page {resume_page} failed; restarting from page 1")
+            logger.info(f"Resuming EO {eo_number} by iterating to page {resume_page}")
+            target_reached = True
+            for step_page in range(2, resume_page + 1):
+                next_arg = self._next_page_argument(soup, step_page - 1)
+                if next_arg:
+                    soup = self._goto_page(soup, step_page)
+                else:
+                    soup = self._goto_page(soup, step_page)
+                if not soup or self._is_error_page(soup):
+                    logger.warning(f"Failed to reach resume page {step_page} (resume target {resume_page}) for EO {eo_number}")
+                    target_reached = False
+                    break
+                current_page = step_page
+                if step_page % 20 == 0:
+                    time.sleep(1)  # brief pause to be gentle during deep resume
+            if not target_reached:
+                logger.warning(f"Resume iteration halted before page {resume_page}; continuing from page {current_page}")
 
         total_created = 0
         total_updated = 0
@@ -771,26 +829,32 @@ class CARBEOScraper:
                 return {"status": "stopped", "created": total_created, "updated": total_updated}
 
             rows = self._parse_table_rows(soup, eo_number)
-            if not rows and not self._find_results_table(soup):
+            if (not rows and not self._find_results_table(soup)) or self._is_error_page(soup):
                 logger.warning(f"[DEBUG] Results table missing on page {current_page} for EO {eo_number}")
                 self._dump_debug_html(eo_number, f"missing_table_page_{current_page}", soup)
-                progress.mark_partial(
-                    last_page=current_page - 1,
-                    scraped_rows=total_rows_seen,
-                    error_msg="table missing during pagination",
-                    expected_pages=max_page_seen,
-                    expected_rows=progress.expected_rows,
-                )
-                return {
-                    "status": "partial",
-                    "created": total_created,
-                    "updated": total_updated,
-                    "skipped_duplicates": total_skipped,
-                    "scraped_rows": total_rows_seen,
-                    "expected_pages": max_page_seen,
-                    "expected_rows": progress.expected_rows,
-                    "error": "table missing during pagination",
-                }
+                recovered = self._recover_page(eo_number, current_page)
+                if recovered and not self._is_error_page(recovered) and self._find_results_table(recovered):
+                    logger.info(f"[DEBUG] Recovered session for EO {eo_number} page {current_page}")
+                    soup = recovered
+                    rows = self._parse_table_rows(soup, eo_number)
+                else:
+                    progress.mark_partial(
+                        last_page=current_page - 1,
+                        scraped_rows=total_rows_seen,
+                        error_msg="table missing during pagination",
+                        expected_pages=max_page_seen,
+                        expected_rows=progress.expected_rows,
+                    )
+                    return {
+                        "status": "partial",
+                        "created": total_created,
+                        "updated": total_updated,
+                        "skipped_duplicates": total_skipped,
+                        "scraped_rows": total_rows_seen,
+                        "expected_pages": max_page_seen,
+                        "expected_rows": progress.expected_rows,
+                        "error": "table missing during pagination",
+                    }
             rows_per_page = rows_per_page or (len(rows) if rows else None)
             page_result = self._persist_page(eo_number, rows, current_page)
 
@@ -862,7 +926,10 @@ class CARBEOScraper:
                 break
 
             current_page = next_page
-            time.sleep(0.3)  # Be gentle to the server
+            if current_page % 50 == 0:
+                time.sleep(1)
+            else:
+                time.sleep(0.3)  # Be gentle to the server
 
         progress.mark_success(expected_pages=max_page_seen, expected_rows=progress.expected_rows or total_rows_seen)
 
