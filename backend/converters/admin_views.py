@@ -623,9 +623,11 @@ def run_parallel_scraper(request):
                 messages.error(request, 'Number of workers must be between 1 and 50.')
                 return redirect('admin:scraper_dashboard')
 
-            # Convert pages to int if provided
+            # Convert pages to int if provided; default to None (unlimited) like the single scraper
             try:
-                pages_int = int(pages) if pages and pages.strip() else 50  # Default to 50
+                pages_int = int(pages) if pages and pages.strip() else None
+                if pages_int is not None and pages_int <= 0:
+                    pages_int = None
             except (ValueError, AttributeError) as e:
                 messages.error(request, f'Invalid pages value: "{pages}". Please enter a valid number.')
                 return redirect('admin:scraper_dashboard')
