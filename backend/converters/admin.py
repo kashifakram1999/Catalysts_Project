@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.contrib.admin import AdminSite
 from django.urls import path
 from django.utils.html import format_html
-from .models import Manufacturer, CatalyticConverter, BlogPost, ScraperRun
+from .models import Manufacturer, CatalyticConverter, BlogPost, ScraperRun, EOProgress
+from django.http import HttpResponse
 from . import admin_views
 
 
@@ -206,3 +207,27 @@ class ScraperRunAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+@admin.register(EOProgress, site=admin_site)
+class EOProgressAdmin(admin.ModelAdmin):
+    list_display = ['eo_number', 'status', 'last_page', 'scraped_rows', 'expected_pages', 'expected_rows', 'updated_at']
+    list_filter = ['status']
+    search_fields = ['eo_number']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['eo_number']
+    actions = ['copy_eo_numbers']
+
+    def copy_eo_numbers(self, request, queryset):
+        """
+        Return a comma-separated list of filtered/selected EO numbers.
+        Users can select all matching rows after filtering and run this action.
+        """
+        eos = list(queryset.values_list('eo_number', flat=True))
+        payload = ",".join(eos)
+        response = HttpResponse(payload, content_type='text/plain')
+        response['Content-Disposition'] = 'attachment; filename=eo_numbers.txt'
+        return response
+    
+    copy_eo_numbers.short_description = "Copy EO numbers (comma-separated)"
+    

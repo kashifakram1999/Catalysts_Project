@@ -46,6 +46,12 @@ class Command(BaseCommand):
             type=str,
             help='Comma-separated list of specific EO numbers to scrape (e.g., "D-393-143,D-393-144")'
         )
+        parser.add_argument(
+            '--scraper-run-id',
+            type=int,
+            default=None,
+            help='ScraperRun ID for stop/resume tracking (optional)'
+        )
 
     def handle(self, *args, **options):
         pages = options['pages']
@@ -53,6 +59,7 @@ class Command(BaseCommand):
         headless = not options['visible'] if options['visible'] else options['headless']
         test_mode = options['test']
         eo_numbers_arg = options['eo_numbers']
+        scraper_run_id = options.get('scraper_run_id')
 
         self.stdout.write("=" * 70)
         self.stdout.write(self.style.SUCCESS("CARB EO-Based Website Scraper"))
@@ -108,7 +115,7 @@ class Command(BaseCommand):
             self.stdout.write("=" * 70)
             self.stdout.write("")
 
-            stats = scraper.scrape_by_eo_numbers(eo_numbers)
+            stats = scraper.scrape_by_eo_numbers(eo_numbers, scraper_run_id=scraper_run_id)
 
             # Display results
             self.stdout.write("")

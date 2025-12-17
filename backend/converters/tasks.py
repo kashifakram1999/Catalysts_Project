@@ -349,6 +349,9 @@ def scrape_website_task(self, headless=True, pages=None, test_mode=False, eo_num
         if eo_numbers:
             cmd_args.append(f'--eo-numbers={eo_numbers}')
 
+        if scraper_run:
+            cmd_args.append(f'--scraper-run-id={scraper_run.id}')
+
         # Update progress
         self.update_state(
             state='PROGRESS',
@@ -463,7 +466,7 @@ def cleanup_old_task_results():
     soft_time_limit=20 * 60 * 60,  # 20 hours per batch
     time_limit=(20 * 60 * 60) + 300,
 )
-def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, pages=50, parent_task_id=None):
+def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, pages=None, parent_task_id=None):
     """
     Scrape a specific batch of EO numbers
 
@@ -497,7 +500,7 @@ def scrape_eo_batch(self, eo_batch, batch_number, total_batches, headless=True, 
     worker_logs = []
     worker_logs.append(f"🚀 Worker {batch_number} started")
     worker_logs.append(f"📋 Processing {len(eo_batch)} EO numbers")
-    worker_logs.append(f"🌐 Headless mode: {headless}, Max pages: {pages}")
+    worker_logs.append(f"🌐 Headless mode: {headless}, Max pages: {pages if pages else 'Unlimited'}")
 
     # Update task state with initial progress
     self.update_state(
@@ -725,14 +728,14 @@ def aggregate_parallel_results(self, batch_results):
     soft_time_limit=20 * 60 * 60,  # 20 hours total
     time_limit=(20 * 60 * 60) + 300,
 )
-def parallel_scrape_website(self, num_workers=4, headless=True, pages=50, test_mode=False, eo_numbers=None):
+def parallel_scrape_website(self, num_workers=4, headless=True, pages=None, test_mode=False, eo_numbers=None):
     """
     Coordinate parallel scraping across multiple workers using Celery chord
 
     Args:
         num_workers (int): Number of parallel workers (default: 4)
         headless (bool): Run browser in headless mode
-        pages (int): Maximum pages to scrape per EO
+        pages (int): Maximum pages to scrape per EO (None for unlimited)
         test_mode (bool): Test mode (scrape only first 12 EO numbers)
         eo_numbers (str): Comma-separated list of specific EO numbers
 

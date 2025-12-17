@@ -304,14 +304,14 @@ CELERY_TASK_SEND_SENT_EVENT = True
 
 # Periodic task schedule for Celery Beat
 CELERY_BEAT_SCHEDULE = {
-    'nightly_website_scrape': {
+    'weekly_website_scrape': {
         'task': 'converters.tasks.parallel_scrape_website',
-        'schedule': crontab(hour=2, minute=0),  # Run daily at 2:00 AM UTC
+        'schedule': crontab(hour=2, minute=0, day_of_week='sunday'),  # Run weekly at 2:00 AM UTC on Sunday
         'options': {'queue': 'scraping'},
         'kwargs': {
             'num_workers': 4,  # Use 4 parallel workers for faster scraping
             'headless': True,
-            'pages': 50,  # Limit to 50 pages per EO to prevent timeouts
+            'pages': None,  # None = scrape all pages per EO (matches admin default when left blank)
             'test_mode': False,
             'eo_numbers': None,
         },
